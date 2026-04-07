@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dice Auction v0.2.3a</title>
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#07090f; display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:hidden; }
+  #gc { width:100%; display:flex; justify-content:center; align-items:center; }
+  #gc canvas { max-width:100%; height:auto !important; display:block; }
+</style>
+</head>
+<body>
+<div id="gc"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+new p5(p => {
+  const CW=1280, CH=720;
+
+  // ══════════════════════════════════════════
+  // LANG
+  // ══════════════════════════════════════════
+  const LANG = {
+    ja: {
+      gameTitle:'ダイスオークション', version:'v0.2.3a',
+      gameSub:'ダイスをカードに割り当て、相手と競り合え',
+      startBtn:'ゲームスタート', configBtn:'設定',
+      rulesTitle:'ゲームルール',
+      rulesList:[
+        '両者ともダイス3個からスタート（設定で変更可）',
+        '毎ターン市場に3枚のカードが並ぶ（共有）',
+        '両者同時にダイスを振る（キープしたダイスは出目を保持）',
+        '各カードへの割り当てを非公開で決める',
+        '  └ キープしたダイスは相手に「個数だけ」見える',
+        '公開後、合計値の高い方がカードを獲得',
+        '同値のとき → 3ダイスタイブレーク（繰り返し）',
+        '全ターン終了後、得点の高い方が勝利',
+      ],
+      configTitle:'ゲーム設定', configStart:'この設定でスタート', configBack:'← 戻る',
+      cfgTurns:'ターン数', cfgAIDiff:'AI 難易度',
+      cfgPDice:'プレイヤー ダイス/ターン', cfgADice:'AI ダイス/ターン',
+      cfgCards:'市場カード数/ターン', cfgKeepLimit:'キープ上限',
+      diffLabels:['易しい','普通','難しい'],
+      keepLimitLabels:['3個','5個','8個','16個'],
+      you:'あなた', opp:'相手', turnLabel:'ターン',
+      dicePerTurn: n=>`ダイス ${n}個/turn`,
+      keepFull: n=>`キープ: ${n}個`,
+      incomeLabel: n=>`収益 +${n}/turn`, oppIncome: n=>`収益 +${n}/turn`,
+      rolling:'ダイスを振っています...',
+      instrNone:'ダイスをクリック or ドラッグ選択 → カードへ割り当て',
+      instrSel: n=>`${n}個選択中 — カードをクリックで割り当て　空白クリックで解除`,
+      confirmBtn:'割り当て確定', nextBtn:'次のターンへ', resultBtn:'結果を見る',
+      toConfig:'設定に戻る',
+      tbTitle: name=>`「${name}」引き分け — タイブレーク！`,
+      tbYouScore: n=>`あなた: ${n}点`, tbOppScore: n=>`相手: ${n}点`,
+      tbWinP:'あなたの勝ち！カード獲得！', tbWinA:'相手の勝ち…', tbAgain:'またも引き分け！',
+      tbContinue:'続ける', tbRetry:'もう一度！',
+      wonLabel:'獲得！', oppWon:'相手が獲得', tieLabel:'引き分け',
+      resultWin:'勝利！', resultLose:'敗北…', resultDraw:'引き分け',
+      resultYou: n=>`あなた: ${n}点`, resultOpp: n=>`相手: ${n}点`,
+      resultDiff:(n,w)=>w==='p'?`${n}点差で勝利`:w==='a'?`${n}点差で敗北`:`同点`,
+      resultInc:(pp,a)=>`収益カード: あなた +${pp}/turn  相手 +${a}/turn`,
+      retryBtn:'もう一度プレイ',
+      cardEffect:{ income:v=>`毎ターン +${v}点`, invest:()=>'ダイス +1個', instant:v=>`即時 +${v}点` },
+      cardNames:{
+        '農場':'農場','市場':'市場','鉱山':'鉱山','港湾':'港湾','神殿':'神殿','農地':'農地',
+        '傭兵団':'傭兵団','鍛冶屋':'鍛冶屋','工房':'工房',
+        '宝箱':'宝箱','略奪':'略奪','祭典':'祭典','遺跡':'遺跡','交易所':'交易所',
+      },
+      eggPull:'引っ張って離すと飛んでいくよ！',
+    },
+    en: {
+      gameTitle:'Dice Auction', version:'v0.2.3a',
+      gameSub:'Assign dice to cards and outbid your opponent',
+      startBtn:'Start Game', configBtn:'Settings',
+      rulesTitle:'How to Play',
+      rulesList:[
+        'Both players start with 3 dice (adjustable in Settings)',
+        'Each turn, cards appear in the shared market',
+        'Both roll simultaneously (kept dice retain their values)',
+        'Secretly assign dice to each card',
+        '  └ Opponent can see only how many dice you kept',
+        'Reveal: higher total wins the card',
+        'Tie → 3-dice tiebreaker (repeats until resolved)',
+        'After all turns, higher score wins',
+      ],
+      configTitle:'Settings', configStart:'Start with These Settings', configBack:'← Back',
+      cfgTurns:'Turns', cfgAIDiff:'AI Difficulty',
+      cfgPDice:'Player Dice / Turn', cfgADice:'AI Dice / Turn',
+      cfgCards:'Market Cards / Turn', cfgKeepLimit:'Keep Limit',
+      diffLabels:['Easy','Normal','Hard'],
+      keepLimitLabels:['3','5','8','16'],
+      you:'You', opp:'Opp.', turnLabel:'Turn',
+      dicePerTurn: n=>`Dice ${n}/turn`,
+      keepFull: n=>`Keep: ${n}`,
+      incomeLabel: n=>`Income +${n}/turn`, oppIncome: n=>`Income +${n}/turn`,
+      rolling:'Rolling dice...',
+      instrNone:'Click or drag-select dice → click a card to assign',
+      instrSel: n=>`${n} selected — click a card  /  click blank to deselect`,
+      confirmBtn:'Confirm Bids', nextBtn:'Next Turn', resultBtn:'View Results',
+      toConfig:'Settings',
+      tbTitle: name=>`"${name}" Tied — Tiebreaker!`,
+      tbYouScore: n=>`You: ${n} pts`, tbOppScore: n=>`Opp: ${n} pts`,
+      tbWinP:'You win! Card acquired!', tbWinA:'Opponent wins…', tbAgain:'Tied again!',
+      tbContinue:'Continue', tbRetry:'Roll Again!',
+      wonLabel:'Won!', oppWon:'Opp. won', tieLabel:'Tied',
+      resultWin:'Victory!', resultLose:'Defeat…', resultDraw:'Draw',
+      resultYou: n=>`You: ${n} pts`, resultOpp: n=>`Opp: ${n} pts`,
+      resultDiff:(n,w)=>w==='p'?`Won by ${n} pts`:w==='a'?`Lost by ${n} pts`:`Even score`,
+      resultInc:(pp,a)=>`Income: You +${pp}/turn  Opp +${a}/turn`,
+      retryBtn:'Play Again',
+      cardEffect:{ income:v=>`+${v} pts/turn`, invest:()=>'+1 Die/turn', instant:v=>`+${v} pts now` },
+      cardNames:{
+        '農場':'Farm','市場':'Market','鉱山':'Mine','港湾':'Port','神殿':'Temple','農地':'Field',
+        '傭兵団':'Mercenary','鍛冶屋':'Forge','工房':'Workshop',
+        '宝箱':'Treasure','略奪':'Raid','祭典':'Festival','遺跡':'Ruins','交易所':'Exchange',
+      },
+      eggPull:'Pull it back and release!',
+    }
+  };
+  let lang='ja', L=LANG.ja;
+  function setLang(l){ lang=l; L=LANG[l]; EGG.reset(); }
+
+  // ══════════════════════════════════════════
+  // CARD POOL & CONFIG
+  // ══════════════════════════════════════════
+  const CARD_POOL=[
+    {key:'農場',type:'income',val:2},{key:'市場',type:'income',val:3},
+    {key:'鉱山',type:'income',val:4},{key:'港湾',type:'income',val:3},
+    {key:'神殿',type:'income',val:5},{key:'農地',type:'income',val:2},
+    {key:'傭兵団',type:'invest',val:1},{key:'鍛冶屋',type:'invest',val:1},{key:'工房',type:'invest',val:1},
+    {key:'宝箱',type:'instant',val:6},{key:'略奪',type:'instant',val:8},
+    {key:'祭典',type:'instant',val:5},{key:'遺跡',type:'instant',val:10},{key:'交易所',type:'instant',val:4},
+  ];
+  let CFG={ turns:10, pDice:3, aDice:3, aiDiff:1, marketCards:3, keepLimit:1 };
+  const KEEP_LIMIT_VALS=[3,5,8,16];
+  const TURN_OPTIONS=[5,8,10,15,20];
+  const CARD_OPTIONS=[2,3,4,5,6];
+
+  // ══════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════
+  const rng=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  const sum=arr=>arr.reduce((s,v)=>s+v,0);
+  const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  function shuffle(a){const r=[...a];for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];}return r;}
+  function hov(x,y,w,h){return p.mouseX>x&&p.mouseX<x+w&&p.mouseY>y&&p.mouseY<y+h;}
+
+  // ══════════════════════════════════════════
+  // EASTER EGG — 2 simultaneous dice
+  // ══════════════════════════════════════════
+  // Each die: {x,y,vx,vy,val,angle,angVel,state,respawnTimer,anchor}
+  // state: 'waiting'|'held'|'flying'|'respawning'
+  const EGG = {
+    words: [],
+    dice: [],          // always 2 dice
+    heldIdx: -1,       // which die is held (-1=none)
+    SPAWN: [
+      {x:180, y:575},  // bottom-left
+      {x:1100, y:575}, // bottom-right
+    ],
+    glow: 0,
+    thankYou: false, tyAlpha:0, tyScale:0,
+    particles: [],
+    titleHitW: 760,
+
+    reset(){
+      this.words=[];this.dice=[];this.heldIdx=-1;
+      this.thankYou=false;this.tyAlpha=0;this.tyScale=0;this.particles=[];this.glow=0;
+    },
+
+    _measure(txt,sz,font){
+      p.push();p.textFont(font==='mochiy'?'Mochiy Pop One, sans-serif':'sans-serif');
+      p.textSize(sz);const tw=p.textWidth(txt);p.pop();return tw;
+    },
+
+    buildWords(){
+      this.words=[];
+      const rx=CW/2-370, ry=196;
+      const addW=(txt,ax,ay,halign,valign,sz,col,font,bold)=>{
+        const tw=this._measure(txt,sz,font),th=sz;
+        let cx=ax,cy=ay;
+        if(halign==='left')cx=ax+tw/2;else if(halign==='right')cx=ax-tw/2;
+        if(valign==='top')cy=ay+th/2;else if(valign==='bottom')cy=ay-th/2;
+        this.words.push({txt,ax,ay,cx,cy,x:cx,y:cy,halign,valign,sz,
+          col:col||[212,220,240],font:font||'sans',bold:!!bold,
+          hitR:Math.max(28,tw/2+4),vx:0,vy:0,va:0,angle:0,alive:true});
+      };
+      addW('日本語',  18,22,'left','center',14,lang==='ja'?[215,178,48]:[88,96,128],'mochiy');
+      addW('English', 18,50,'left','center',14,lang==='en'?[215,178,48]:[88,96,128],'mochiy');
+      const titleTW=this._measure(L.gameTitle,64,'mochiy');
+      this.titleHitW=Math.max(titleTW+60,400);
+      addW(L.gameTitle,CW/2,112,'center','center',64,[52,192,108],'mochiy');
+      addW(L.gameSub,CW/2,172,'center','center',17,[122,138,185],'sans');
+      addW(L.rulesTitle,rx+20,ry+12,'left','top',17,[52,192,108],'mochiy');
+      L.rulesList.forEach((line,i)=>addW(line,rx+22,ry+42+i*34,'left','top',20,[215,222,245],'sans',true));
+      addW(L.startBtn, CW/2,CH-94,'center','center',20,[205,248,218],'mochiy');
+      addW(L.configBtn,CW/2,CH-39,'center','center',15,[182,202,242],'sans');
+      addW(L.version,CW-12,CH-8,'right','bottom',11,[58,72,105],'sans');
+      addW(L.eggPull,CW/2,CH-18,'center','center',14,[165,130,50],'sans');
+    },
+
+    // Spawn a die at its fixed slot (0=left, 1=right)
+    spawnDieAt(idx){
+      const pos=this.SPAWN[idx];
+      this.dice[idx]={
+        x:pos.x, y:pos.y, vx:0, vy:0,
+        val:rng(1,6), angle:0, angVel:0,
+        state:'waiting', respawnTimer:0,
+        anchor:{x:pos.x, y:pos.y}, idx
+      };
+    },
+
+    // Activate egg: build words + spawn both dice
+    activate(){
+      this.buildWords();
+      this.dice=[null,null];
+      this.spawnDieAt(0);
+      this.spawnDieAt(1);
+    },
+
+    isOnTitle(mx,my){
+      const hw=this.titleHitW/2||380;
+      return mx>CW/2-hw&&mx<CW/2+hw&&my>76&&my<148;
+    },
+
+    isNearDie(die,mx,my){
+      const dx=mx-die.x,dy=my-die.y;
+      return Math.sqrt(dx*dx+dy*dy)<40;
+    },
+
+    spawnParticles(x,y,col){
+      for(let i=0;i<8;i++){
+        const a=Math.random()*Math.PI*2,spd=2+Math.random()*5;
+        this.particles.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd-1,life:1,col});
+      }
+    },
+
+    update(){
+      this.glow=(this.glow+0.06)%(Math.PI*2);
+
+      this.dice.forEach((die,idx)=>{
+        if(!die)return;
+        if(die.state==='respawning'){
+          die.respawnTimer--;
+          if(die.respawnTimer<=0) this.spawnDieAt(idx);
+          return;
+        }
+        if(die.state==='held'){
+          die.x=p.mouseX; die.y=p.mouseY;
+          const dx=die.x-die.anchor.x,dy=die.y-die.anchor.y;
+          die.angle=Math.atan2(dy,dx)*0.3;
+          return;
+        }
+        if(die.state==='flying'){
+          die.vy+=0.04; // near-zero gravity
+          die.x+=die.vx; die.y+=die.vy;
+          die.angle+=die.angVel; die.angVel*=0.98;
+          const R=27;
+          if(die.x<R){die.x=R;die.vx=Math.abs(die.vx)*0.80;this.spawnParticles(die.x,die.y,[220,180,60]);}
+          if(die.x>CW-R){die.x=CW-R;die.vx=-Math.abs(die.vx)*0.80;this.spawnParticles(die.x,die.y,[220,180,60]);}
+          if(die.y<R){die.y=R;die.vy=Math.abs(die.vy)*0.80;}
+          if(die.y>CH+80){die.state='respawning';die.respawnTimer=20;return;}
+          // Word collision
+          const spd=Math.sqrt(die.vx**2+die.vy**2);
+          if(spd>0.5){
+            this.words.forEach(w=>{
+              if(!w.alive)return;
+              const dx=die.x-w.cx,dy=die.y-w.cy;
+              const dist=Math.sqrt(dx*dx+dy*dy);
+              if(dist<w.hitR+R){
+                const nx=dx/dist,ny=dy/dist;
+                w.vx=nx*spd*0.9+die.vx*0.35+(Math.random()-0.5)*2;
+                w.vy=ny*spd*0.9+die.vy*0.35-1.5;
+                w.va=(Math.random()-0.5)*0.22;
+                w.alive=false;
+                this.spawnParticles(w.cx,w.cy,w.col);
+                die.vx-=nx*spd*0.2; die.vy-=ny*spd*0.2;
+                die.angVel+=(Math.random()-0.5)*0.6;
+              }
+            });
+          }
+          if(this.words.length>0&&this.words.every(w=>!w.alive)){
+            this.thankYou=true;
+          }
+        }
+      });
+
+      // Dead word physics
+      this.words.filter(w=>!w.alive).forEach(w=>{
+        w.vy+=0.15;w.vx*=0.99;w.x+=w.vx;w.y+=w.vy;w.angle+=w.va;
+      });
+      // Particles
+      this.particles=this.particles.filter(pt=>{
+        pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=0.07;pt.life-=0.033;return pt.life>0;
+      });
+      if(this.thankYou){this.tyAlpha=Math.min(255,this.tyAlpha+3.5);this.tyScale=Math.min(1,this.tyScale+0.035);}
+    },
+
+    drawWords(){
+      this.words.forEach(w=>{
+        p.push();p.noStroke();
+        if(w.alive){
+          p.fill(w.col[0],w.col[1],w.col[2]);
+          const ha=w.halign==='left'?p.LEFT:w.halign==='right'?p.RIGHT:p.CENTER;
+          const va=w.valign==='top'?p.TOP:w.valign==='bottom'?p.BOTTOM:p.CENTER;
+          p.textAlign(ha,va);p.textSize(w.sz);
+          p.textFont(w.font==='mochiy'?'Mochiy Pop One, sans-serif':'sans-serif');
+          if(w.bold)p.textStyle(p.BOLD);
+          p.text(w.txt,w.ax,w.ay);
+          p.textStyle(p.NORMAL);p.textFont('sans-serif');
+        } else {
+          p.translate(w.x,w.y);p.rotate(w.angle);
+          p.fill(w.col[0],w.col[1],w.col[2],100);
+          p.textAlign(p.CENTER,p.CENTER);p.textSize(w.sz);
+          p.textFont(w.font==='mochiy'?'Mochiy Pop One, sans-serif':'sans-serif');
+          if(w.bold)p.textStyle(p.BOLD);
+          p.text(w.txt,0,0);
+          p.textStyle(p.NORMAL);p.textFont('sans-serif');
+        }
+        p.pop();
+      });
+    },
+
+    _drawOneDie(die){
+      const isWaiting=die.state==='waiting',isHeld=die.state==='held';
+      // Rubber band when held
+      if(isHeld){
+        const ax=die.anchor.x,ay=die.anchor.y;
+        const pullDist=Math.sqrt((die.x-ax)**2+(die.y-ay)**2);
+        const tension=Math.min(pullDist/160,1);
+        const r=Math.round(180+75*tension),g=Math.round(120-80*tension);
+        const ang=Math.atan2(die.y-ay,die.x-ax),fw=11;
+        const fx1=ax+Math.cos(ang+Math.PI/2)*fw,fy1=ay+Math.sin(ang+Math.PI/2)*fw;
+        const fx2=ax+Math.cos(ang-Math.PI/2)*fw,fy2=ay+Math.sin(ang-Math.PI/2)*fw;
+        p.stroke(r,g,40,200);p.strokeWeight(2.5);
+        p.line(fx1,fy1,die.x,die.y);p.line(fx2,fy2,die.x,die.y);
+        p.noStroke();p.fill(r,g,40,180);p.ellipse(ax,ay,12,12);
+      }
+      // Die body
+      p.push();p.translate(die.x,die.y);p.rotate(die.angle);
+      if(isWaiting){
+        const pulse=(Math.sin(this.glow*2)*0.5+0.5);
+        p.noStroke();p.fill(215,178,50,pulse*80);p.ellipse(0,0,72+pulse*16,72+pulse*16);
+      }
+      p.noStroke();p.fill(0,0,0,60);p.rect(3,3,54,54,9);
+      p.stroke(isWaiting?[255,215,80]:isHeld?[255,80,80]:[195,55,55]);
+      p.strokeWeight(2.5);
+      p.fill(isWaiting?[212,165,45]:isHeld?[185,55,55]:[195,55,55]);
+      p.rect(-27,-27,54,54,9);
+      p.noStroke();p.fill(255,240,240);
+      const PIPSD={1:[[0,0]],2:[[-9,-9],[9,9]],3:[[-9,-9],[0,0],[9,9]],
+        4:[[-9,-9],[9,-9],[-9,9],[9,9]],5:[[-9,-9],[9,-9],[0,0],[-9,9],[9,9]],
+        6:[[-9,-8],[9,-8],[-9,0],[9,0],[-9,8],[9,8]]};
+      (PIPSD[die.val]||[]).forEach(([px,py])=>p.ellipse(px,py,8,8));
+      p.pop();
+
+      // Respawn shrinking dot
+      if(die.state==='respawning'&&die.respawnTimer>0){
+        const prog=die.respawnTimer/20;
+        const pos=this.SPAWN[die.idx];
+        p.noStroke();p.fill(215,178,50,120*prog);p.ellipse(pos.x,pos.y,22*prog,22*prog);
+      }
+    },
+
+    drawDice(){
+      this.dice.forEach(die=>{
+        if(!die||die.state==='respawning')return;
+        this._drawOneDie(die);
+      });
+      // Draw respawn dots separately (so they show even when die is null)
+      this.dice.forEach(die=>{
+        if(!die)return;
+        if(die.state==='respawning'){
+          const prog=die.respawnTimer/20;
+          const pos=this.SPAWN[die.idx];
+          p.noStroke();p.fill(215,178,50,120*prog);p.ellipse(pos.x,pos.y,22*prog,22*prog);
+        }
+      });
+    },
+
+    drawParticles(){
+      this.particles.forEach(pt=>{
+        p.noStroke();p.fill(pt.col[0],pt.col[1],pt.col[2],pt.life*200);
+        p.ellipse(pt.x,pt.y,7*pt.life,7*pt.life);
+      });
+    },
+
+    drawThankYou(){
+      if(!this.thankYou)return;
+      p.push();p.translate(CW/2,CH/2);p.scale(this.tyScale);
+      p.noStroke();
+      for(let r=5;r>0;r--){p.fill(215,178,50,this.tyAlpha*(r/5)*0.18);p.ellipse(0,0,r*180,r*80);}
+      p.textFont('Mochiy Pop One, sans-serif');
+      p.fill(215,178,50,this.tyAlpha);p.textAlign(p.CENTER,p.CENTER);p.textSize(56);
+      p.text('Thank you for playing!',0,0);
+      p.textFont('sans-serif');p.pop();
+    },
+
+    onPress(mx,my){
+      if(this.thankYou)return false;
+      if(!this.words.length){
+        if(this.isOnTitle(mx,my)){this.activate();return true;}
+        return false;
+      }
+      // Try to grab a waiting die (priority: closest)
+      if(this.heldIdx<0){
+        let bestDist=9999,bestIdx=-1;
+        this.dice.forEach((die,idx)=>{
+          if(!die||die.state!=='waiting')return;
+          const dx=mx-die.x,dy=my-die.y,dist=Math.sqrt(dx*dx+dy*dy);
+          if(dist<40&&dist<bestDist){bestDist=dist;bestIdx=idx;}
+        });
+        if(bestIdx>=0){
+          this.dice[bestIdx].state='held';
+          this.heldIdx=bestIdx;
+          return true;
+        }
+      }
+      return false;
+    },
+
+    onRelease(mx,my){
+      if(this.heldIdx<0)return false;
+      const die=this.dice[this.heldIdx];
+      if(!die){this.heldIdx=-1;return false;}
+      const ax=die.anchor.x,ay=die.anchor.y;
+      const dx=ax-mx,dy=ay-my;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const MIN_SPD=7,MAX_SPD=50;
+      const speed=clamp(dist*0.18,MIN_SPD,MAX_SPD);
+      if(dist>2){die.vx=(dx/dist)*speed;die.vy=(dy/dist)*speed;}
+      else{die.vx=(Math.random()-0.5)*MIN_SPD;die.vy=-MIN_SPD;}
+      die.angVel=die.vx*0.06;
+      die.val=rng(1,6);
+      die.state='flying';
+      this.heldIdx=-1;
+      return true;
+    }
+  };
+
+  // ══════════════════════════════════════════
+  // GAME STATE
+  // ══════════════════════════════════════════
+  let scene='TITLE', G={};
+  let dragS=null,dragE=null,isDragging=false;
+
+  function initGame(){
+    G={turn:1,totalTurns:CFG.turns,phase:'ROLLING',
+      pDice:[],pPerTurn:CFG.pDice,pKeepNext:[],pScore:0,pIncome:[],
+      aPerTurn:CFG.aDice,aKeepNext:[],aKeepVis:0,aPool:[],aScore:0,aIncome:[],
+      market:[],selSet:new Set(),revStep:-1,revTimer:0,tb:null,_rollTotal:0};
+    beginTurn();
+  }
+  function beginTurn(){
+    const pKept=G.pKeepNext.map(d=>({...d}));G.pKeepNext=[];
+    const pFresh=[];for(let i=0;i<G.pPerTurn;i++)pFresh.push({val:rng(1,6),fresh:true,card:null,rollF:20+i*10,bounceF:0});
+    G.pDice=[...pKept.map(d=>({val:d.val,fresh:false,card:null,rollF:0,bounceF:0})),...pFresh];
+    const aKept=G.aKeepNext.map(d=>({...d}));G.aKeepNext=[];
+    const aFresh=[];for(let i=0;i<G.aPerTurn;i++)aFresh.push({val:rng(1,6),fresh:true});
+    G.aPool=[...aKept.map(d=>({val:d.val,fresh:false})),...aFresh];
+    G.aKeepVis=aKept.length;
+    const nc=Math.min(CFG.marketCards,CARD_POOL.length);
+    G.market=shuffle(CARD_POOL).slice(0,nc).map(c=>({...c,pBid:0,aBid:0,winner:null}));
+    G.selSet=new Set();G.revStep=-1;G.phase='ROLLING';G._rollTotal=20+G.pPerTurn*10+14;
+  }
+  function pBidFor(ci){return sum(G.pDice.filter(d=>d.card===ci).map(d=>d.val));}
+  function aiDecide(){
+    const diff=CFG.aiDiff,maxKeep=KEEP_LIMIT_VALS[CFG.keepLimit];
+    function evalCard(c){if(c.type==='income')return c.val*(G.totalTurns-G.turn+1);if(c.type==='invest')return 5+(G.totalTurns-G.turn)*1.5;return c.val;}
+    const nCards=G.market.length,pool=shuffle([...G.aPool]),bids=Array.from({length:nCards},()=>[]);let rem=[...pool];
+    if(diff===0){for(let i=0;i<nCards;i++){const c=i===nCards-1?rem.length:clamp(Math.floor(Math.random()*(rem.length+1)),0,rem.length);bids[i]=rem.splice(0,c);}}
+    else{const ev=G.market.map(evalCard),et=sum(ev)||1,noise=diff===2?0.5:1.8;const order=[...Array(nCards).keys()].sort((a,b)=>ev[b]-ev[a]);for(let i=0;i<nCards;i++){const ci=order[i];let cnt=Math.round((ev[ci]/et)*pool.length+(Math.random()-0.5)*noise);cnt=clamp(cnt,0,rem.length-(nCards-1-i));if(i===nCards-1)cnt=rem.length;bids[ci]=rem.splice(0,cnt);}
+      G.aKeepNext=[];if(G.turn<G.totalTurns-1&&Math.random()<(diff===2?0.42:0.28)&&maxKeep>0){const ord2=[...Array(nCards).keys()].sort((a,b)=>ev[a]-ev[b]);let kept=0;for(let i=0;i<nCards&&kept<Math.min(maxKeep,1);i++){if(bids[ord2[i]].length>0){G.aKeepNext.push({val:bids[ord2[i]].pop().val});kept++;}}}}
+    G.aKeepVis=G.aKeepNext.length;G.market.forEach((c,i)=>{c.aBid=sum(bids[i].map(d=>d.val));});
+  }
+  function resolveAll(){G.market.forEach((c,i)=>{c.pBid=pBidFor(i);});aiDecide();G.market.forEach(c=>{c.winner=c.pBid>c.aBid?'p':c.aBid>c.pBid?'a':'tie';});}
+  function applyWin(card,who){if(card.type==='income'){if(who==='p')G.pIncome.push(card.val);else G.aIncome.push(card.val);}else if(card.type==='invest'){if(who==='p')G.pPerTurn++;else G.aPerTurn++;}else{if(who==='p')G.pScore+=card.val;else G.aScore+=card.val;}}
+  function finishTurn(){G.market.forEach(c=>{if(c.winner==='p')applyWin(c,'p');else if(c.winner==='a')applyWin(c,'a');});G.pScore+=sum(G.pIncome);G.aScore+=sum(G.aIncome);G.phase='TURN_END';}
+  function startTiebreak(ci){const pD=[rng(1,6),rng(1,6),rng(1,6)],aD=[rng(1,6),rng(1,6),rng(1,6)];const pt=sum(pD),at=sum(aD);G.tb={ci,pD,aD,pt,at,res:pt>at?'p':at>pt?'a':'again',rollF:72,revF:0,showResult:false,showBtn:false};G.phase='TIEBREAK';}
+  function onTbDone(w){G.market[G.tb.ci].winner=w;const n=G.market.findIndex(c=>c.winner==='tie');if(n>=0)startTiebreak(n);else finishTurn();}
+
+  // ══════════════════════════════════════════
+  // LAYOUT
+  // ══════════════════════════════════════════
+  const TB_H=58,AZ={y:62,h:82},PZ={y:428,h:250};
+  const CARD_H=276,CARD_Y=148,DS=50,DSS=33,D_GAP=7,D_MAXCOLS=16;
+  function getCardLayout(){const n=G.market?G.market.length:CFG.marketCards;const cw=Math.min(280,Math.floor((CW-80)/n)-16);const totalUsed=n*cw+(n-1)*16;const startX=(CW-totalUsed)/2;return{cw,ch:CARD_H,centers:Array.from({length:n},(_,i)=>startX+i*(cw+16)+cw/2)};}
+  function cRect(i){const cl=getCardLayout();return{x:cl.centers[i]-cl.cw/2,y:CARD_Y,w:cl.cw,h:cl.ch};}
+  function pDiceLayout(freshList,keptList){
+    const all=[...keptList,...freshList],fC=freshList.length,kC=keptList.length;
+    const total=Math.min(all.length,D_MAXCOLS*2),positions=[];
+    for(let i=0;i<total;i++){const row=Math.floor(i/D_MAXCOLS),col=i%D_MAXCOLS;const rowLen=Math.min(D_MAXCOLS,total-row*D_MAXCOLS);const rowW=rowLen*DS+(rowLen-1)*D_GAP;const startX=CW/2-rowW/2;positions.push({x:startX+col*(DS+D_GAP),y:PZ.y+72+row*(DS+D_GAP+4),isKept:i<kC});}
+    const keptBoxes=[];
+    for(let row=0;row<2;row++){const rp=positions.filter((_,i)=>Math.floor(i/D_MAXCOLS)===row&&i<kC);if(rp.length>0){const xs=rp.map(pos=>pos.x);keptBoxes.push({x:Math.min(...xs)-6,y:rp[0].y-20,w:Math.max(...xs)+DS-Math.min(...xs)+12,h:DS+24});}}
+    return{positions,fC,kC,keptBoxes,overflow:all.length>total};
+  }
+  function aDiceLayout(poolLen,keptVis){
+    const freshC=Math.max(0,poolLen-keptVis),SEP=(freshC>0&&keptVis>0)?22:0;
+    const freshW=freshC>0?freshC*DSS+(freshC-1)*6:0,keptW=keptVis>0?keptVis*DSS+(keptVis-1)*6:0;
+    const totalW=freshW+SEP+keptW,startX=CW/2-totalW/2;
+    const positions=[];let x=startX;
+    for(let i=0;i<freshC;i++){positions.push({x,held:false});x+=DSS+6;}
+    if(SEP>0)x=startX+freshW+SEP;
+    const keptStartX=x;for(let i=0;i<keptVis;i++){positions.push({x,held:true});x+=DSS+6;}
+    return{positions,keptStartX,keptW,freshC,keptVis};
+  }
+  function cSlot(ci,di){const r=cRect(ci);return{x:r.x+6+di*(DSS+4),y:r.y+CARD_H-DSS-8};}
+
+  // ══════════════════════════════════════════
+  // DRAW HELPERS
+  // ══════════════════════════════════════════
+  const PIPS={1:[[.5,.5]],2:[[.26,.26],[.74,.74]],3:[[.26,.26],[.5,.5],[.74,.74]],4:[[.26,.26],[.74,.26],[.26,.74],[.74,.74]],5:[[.26,.26],[.74,.26],[.5,.5],[.26,.74],[.74,.74]],6:[[.26,.18],[.74,.18],[.26,.5],[.74,.5],[.26,.82],[.74,.82]]};
+  function drawDie(x,y,val,size,col,sel,faceDown,scale){
+    const sc=scale||1,s=size*sc,ox=(size-s)/2,oy=(size-s)/2,r=Math.max(4,Math.round(7*s/50));
+    p.push();p.noStroke();p.fill(0,0,0,55);p.rect(x+ox+3,y+oy+3,s,s,r);
+    if(sel){p.stroke(255,202,38);p.strokeWeight(3.5);}else p.noStroke();
+    p.fill(col[0],col[1],col[2]);p.rect(x+ox,y+oy,s,s,r);p.noStroke();
+    if(!faceDown){p.fill(10,14,24);const d=s*0.1;(PIPS[val]||[]).forEach(([px,py])=>p.ellipse(x+ox+px*s,y+oy+py*s,d*2,d*2));}
+    else{p.fill(255,255,255,32);p.textAlign(p.CENTER,p.CENTER);p.textSize(s*.52);p.text('?',x+ox+s/2,y+oy+s/2);}
+    p.pop();
+  }
+  function drawIcon(cx,cy,type,sz){
+    p.push();p.translate(cx,cy);p.noStroke();
+    if(type==='income'){p.fill(208,178,52);p.ellipse(0,-sz*.38,sz*.18,sz*.3);p.ellipse(-sz*.19,-sz*.22,sz*.14,sz*.22);p.ellipse(sz*.19,-sz*.22,sz*.14,sz*.22);p.fill(158,124,36);p.rect(-sz*.04,-sz*.38,sz*.08,sz*.4,3);}
+    else if(type==='invest'){p.fill(178,195,215);p.rect(-sz*.06,-sz*.42,sz*.12,sz*.68,3);p.rect(-sz*.28,-sz*.12,sz*.56,sz*.12,3);p.fill(162,128,58);p.rect(-sz*.06,sz*.22,sz*.12,sz*.24,3);}
+    else{p.fill(212,165,38);p.quad(0,-sz*.44,sz*.36,0,0,sz*.42,-sz*.36,0);p.fill(242,212,82,155);p.quad(0,-sz*.28,sz*.22,0,0,sz*.28,-sz*.22,0);}
+    p.pop();
+  }
+  function typeCol(t){return t==='income'?[52,182,98]:t==='invest'?[78,132,218]:[212,158,52];}
+  function drawCard(i){
+    const r=cRect(i),c=G.market[i];
+    const revealed=(G.phase==='REVEAL'&&G.revStep>i)||G.phase==='TIEBREAK'||G.phase==='TURN_END';
+    const tc=typeCol(c.type),pb=pBidFor(i);
+    p.push();
+    if(c.winner&&c.winner!=='tie'&&revealed){const gc=c.winner==='p'?[52,192,98]:[192,52,52];p.noStroke();p.fill(gc[0],gc[1],gc[2],28);p.rect(r.x-6,r.y-6,r.w+12,r.h+12,14);}
+    p.stroke(60,76,110);p.strokeWeight(1.5);p.fill(17,22,38);p.rect(r.x,r.y,r.w,r.h,10);
+    p.noStroke();p.fill(...tc);p.rect(r.x,r.y,r.w,5,10,10,0,0);
+    p.fill(13,18,32);p.rect(r.x+8,r.y+12,r.w-16,72,6);
+    drawIcon(r.x+r.w/2,r.y+48,c.type,44);
+    p.fill(212,220,238);p.textAlign(p.CENTER,p.TOP);p.textSize(18);p.text(L.cardNames[c.key]||c.key,r.x+r.w/2,r.y+90);
+    p.fill(...tc);p.textSize(12);p.text(c.type==='income'?L.cardEffect.income(c.val):c.type==='invest'?L.cardEffect.invest():L.cardEffect.instant(c.val),r.x+r.w/2,r.y+114);
+    const by=r.y+132;p.fill(22,28,48);p.rect(r.x+8,by,r.w-16,76,6);
+    p.fill(68,190,126);p.textAlign(p.LEFT,p.CENTER);p.textSize(12);p.text(L.you,r.x+14,by+20);p.textSize(25);p.textAlign(p.RIGHT,p.CENTER);p.text(pb,r.x+r.w-12,by+20);
+    p.fill(180,86,86);p.textAlign(p.LEFT,p.CENTER);p.textSize(12);p.text(L.opp,r.x+14,by+54);p.textSize(25);p.textAlign(p.RIGHT,p.CENTER);
+    if(revealed){p.fill(180,86,86);p.text(c.aBid,r.x+r.w-12,by+54);}else{p.fill(68,80,110);p.text('—',r.x+r.w-12,by+54);}
+    if(c.winner&&revealed){const wc=c.winner==='p'?[52,190,98]:c.winner==='a'?[190,68,68]:[192,165,52];p.noStroke();p.fill(...wc);p.rect(r.x+r.w/2-50,r.y+r.h-33,100,26,13);p.fill(255);p.textAlign(p.CENTER,p.CENTER);p.textSize(12);p.text(c.winner==='p'?L.wonLabel:c.winner==='a'?L.oppWon:L.tieLabel,r.x+r.w/2,r.y+r.h-20);}
+    G.pDice.filter(d=>d.card===i).forEach((d,di)=>{const s=cSlot(i,di);drawDie(s.x,s.y,d.val,DSS,d.fresh?[58,108,192]:[155,118,42],false,false);});
+    p.pop();
+  }
+
+  // ══════════════════════════════════════════
+  // TITLE DRAWING
+  // ══════════════════════════════════════════
+  function drawTitleBg(){
+    p.background(8,11,20);p.stroke(22,30,52);p.strokeWeight(1);
+    for(let x=0;x<CW;x+=60)p.line(x,0,x,CH);for(let y=0;y<CH;y+=60)p.line(0,y,CW,y);
+  }
+  function drawRulesBoxFrame(){
+    const rx=CW/2-370,ry=196,rw=740,rh=316;
+    for(let i=0;i<rh;i++){const t=i/rh;p.noStroke();p.fill(Math.round(p.lerp(24,14,t)),Math.round(p.lerp(32,20,t)),Math.round(p.lerp(62,38,t)),215);p.rect(rx+1,ry+1+i,rw-2,1);}
+    p.noFill();p.stroke(52,105,168);p.strokeWeight(1.5);p.rect(rx,ry,rw,rh,12);
+    p.stroke(52,105,168,55);p.strokeWeight(4);p.rect(rx-2,ry-2,rw+4,rh+4,14);p.noStroke();
+  }
+  function drawRulesTitleUnderline(){
+    const rx=CW/2-370,ry=196;
+    p.push();p.textFont('Mochiy Pop One, sans-serif');p.textSize(17);
+    const rTitleW=p.textWidth(L.rulesTitle);
+    p.noStroke();p.fill(52,192,108,180);p.rect(rx+20,ry+36,rTitleW+4,2);p.pop();
+  }
+  function drawButtonBoxes(){
+    const hS=hov(CW/2-130,CH-118,260,48);p.fill(hS?[55,152,85]:[36,112,60]);p.rect(CW/2-130,CH-118,260,48,10);
+    const hC=hov(CW/2-64,CH-56,128,34);p.fill(hC?[52,98,152]:[34,68,118]);p.rect(CW/2-64,CH-56,128,34,8);
+  }
+  function drawTitleNormalText(){
+    const rx=CW/2-370,ry=196;
+    p.noStroke();p.textFont('Mochiy Pop One, sans-serif');p.textSize(14);
+    [{k:'ja',label:'日本語'},{k:'en',label:'English'}].forEach((lv,i)=>{
+      const active=lang===lv.k;p.fill(active?[215,178,48]:[88,96,128]);p.textAlign(p.LEFT,p.CENTER);p.text(lv.label,18,22+i*28);
+      if(active){p.fill(215,178,48);p.rect(16,32+i*28,lang==='ja'?66:64,2);}
+    });
+    p.fill(52,192,108);p.textAlign(p.CENTER,p.CENTER);p.textSize(64);p.text(L.gameTitle,CW/2,112);
+    p.textFont('sans-serif');p.fill(122,138,185);p.textSize(17);p.text(L.gameSub,CW/2,172);
+    p.textFont('Mochiy Pop One, sans-serif');p.fill(52,192,108);p.textAlign(p.LEFT,p.TOP);p.textSize(17);p.text(L.rulesTitle,rx+20,ry+12);
+    p.textFont('sans-serif');p.textStyle(p.BOLD);p.fill(215,222,245);p.textSize(20);
+    L.rulesList.forEach((line,i)=>p.text(line,rx+22,ry+42+i*34));p.textStyle(p.NORMAL);
+    p.textFont('Mochiy Pop One, sans-serif');p.fill(205,248,218);p.textAlign(p.CENTER,p.CENTER);p.textSize(20);p.text(L.startBtn,CW/2,CH-94);
+    p.textFont('sans-serif');p.fill(182,202,242);p.textSize(15);p.text(L.configBtn,CW/2,CH-39);
+    p.fill(58,72,105);p.textSize(11);p.textAlign(p.RIGHT,p.BOTTOM);p.text(L.version,CW-12,CH-8);
+  }
+  function drawLangUnderlines(){
+    [{k:'ja',x:16,w:66},{k:'en',x:16,w:64}].forEach((lv,i)=>{
+      if(lang===lv.k){p.noStroke();p.fill(215,178,48);p.rect(lv.x,32+i*28,lv.w,2);}
+    });
+  }
+
+  function drawTitle(){
+    EGG.update();
+    drawTitleBg();drawRulesBoxFrame();p.noStroke();drawButtonBoxes();
+    if(!EGG.words.length){
+      drawRulesTitleUnderline();drawTitleNormalText();
+    } else {
+      drawRulesTitleUnderline();drawLangUnderlines();
+      EGG.drawWords();EGG.drawParticles();EGG.drawDice();EGG.drawThankYou();
+    }
+  }
+
+  // ══════════════════════════════════════════
+  // SCENE: CONFIG
+  // ══════════════════════════════════════════
+  function drawConfig(){
+    p.background(8,11,20);
+    p.noStroke();p.fill(205,212,238);p.textAlign(p.CENTER,p.TOP);p.textSize(32);p.text(L.configTitle,CW/2,32);
+    cfgRow(  L.cfgTurns,    118, TURN_OPTIONS, CFG.turns);
+    cfgRow3( L.cfgAIDiff,   208, L.diffLabels, CFG.aiDiff);
+    cfgStepper(L.cfgPDice,  298, 'pDice', 1,10);
+    cfgStepper(L.cfgADice,  386, 'aDice', 1,10);
+    cfgRow(  L.cfgCards,    474, CARD_OPTIONS, CFG.marketCards);
+    cfgRow3( L.cfgKeepLimit,562, L.keepLimitLabels, CFG.keepLimit);
+    const hS=hov(CW/2-138,634,276,50);p.fill(hS?[52,148,82]:[34,108,58]);p.rect(CW/2-138,634,276,50,10);
+    p.fill(205,248,218);p.textAlign(p.CENTER,p.CENTER);p.textSize(17);p.text(L.configStart,CW/2,659);
+    const hB=hov(28,28,118,36);p.fill(hB?[52,70,112]:[34,50,88]);p.rect(28,28,118,36,8);
+    p.fill(175,188,225);p.textSize(14);p.text(L.configBack,87,46);
+    p.fill(28,36,58);p.textAlign(p.RIGHT,p.BOTTOM);p.textSize(11);p.text(L.version,CW-12,CH-8);
+  }
+  function cfgRow(label,y,opts,cur){
+    p.noStroke();p.fill(152,162,198);p.textAlign(p.CENTER,p.CENTER);p.textSize(14);p.text(label,CW/2,y-18);
+    const bw=72,bh=40,gap=10,sx=CW/2-((bw+gap)*opts.length-gap)/2;
+    opts.forEach((v,i)=>{const bx=sx+i*(bw+gap),sel=cur===v;p.fill(sel?[52,152,85]:[26,34,56]);p.stroke(sel?[52,152,85]:[52,66,100]);p.strokeWeight(1.5);p.rect(bx,y,bw,bh,8);p.noStroke();p.fill(sel?[208,248,218]:[145,155,192]);p.textSize(16);p.text(v,bx+bw/2,y+bh/2);});
+  }
+  function cfgRow3(label,y,opts,cur){
+    p.noStroke();p.fill(152,162,198);p.textAlign(p.CENTER,p.CENTER);p.textSize(14);p.text(label,CW/2,y-18);
+    const bw=Math.min(105,Math.floor((CW-120)/opts.length)-14),bh=40,gap=10,sx=CW/2-((bw+gap)*opts.length-gap)/2;
+    opts.forEach((v,i)=>{const bx=sx+i*(bw+gap),sel=cur===i;p.fill(sel?[52,152,85]:[26,34,56]);p.stroke(sel?[52,152,85]:[52,66,100]);p.strokeWeight(1.5);p.rect(bx,y,bw,bh,8);p.noStroke();p.fill(sel?[208,248,218]:[145,155,192]);p.textSize(14);p.text(v,bx+bw/2,y+bh/2);});
+  }
+  function cfgStepper(label,y,key,mn,mx2){
+    p.noStroke();p.fill(152,162,198);p.textAlign(p.CENTER,p.CENTER);p.textSize(14);p.text(label,CW/2,y-18);
+    const hM=hov(CW/2-78,y,48,40),hP=hov(CW/2+30,y,48,40);
+    p.fill(hM?[52,68,112]:[30,42,78]);p.rect(CW/2-78,y,48,40,8);p.fill(hP?[52,68,112]:[30,42,78]);p.rect(CW/2+30,y,48,40,8);
+    p.fill(172,185,222);p.textSize(22);p.text('−',CW/2-54,y+20);p.text('+',CW/2+54,y+20);
+    p.fill(208,215,240);p.textSize(22);p.text(CFG[key],CW/2,y+20);
+  }
+
+  // ══════════════════════════════════════════
+  // SCENE: GAME
+  // ══════════════════════════════════════════
+  // Settings button in game (top-right of top bar)
+  const CFG_BTN={x:CW-104,y:10,w:90,h:36};
+  function drawConfigBtn(){
+    const hh=hov(CFG_BTN.x,CFG_BTN.y,CFG_BTN.w,CFG_BTN.h);
+    p.fill(hh?[52,70,112]:[32,44,78]);p.stroke(55,75,120);p.strokeWeight(1);
+    p.rect(CFG_BTN.x,CFG_BTN.y,CFG_BTN.w,CFG_BTN.h,7);
+    p.noStroke();p.fill(168,182,222);p.textAlign(p.CENTER,p.CENTER);p.textSize(13);
+    p.text('⚙ '+L.toConfig,CFG_BTN.x+CFG_BTN.w/2,CFG_BTN.y+CFG_BTN.h/2);
+  }
+
+  function drawGame(){
+    p.background(8,11,20);
+    if(G.phase==='ROLLING'){G._rollTotal--;G.pDice.forEach(d=>{if(d.rollF>0){d.rollF--;if(d.rollF===0)d.bounceF=12;}else if(d.bounceF>0)d.bounceF--;});if(G._rollTotal<=0)G.phase='ASSIGN';}
+    if(G.phase==='REVEAL'){G.revTimer--;if(G.revTimer<=0){G.revStep++;G.revTimer=30;if(G.revStep>=G.market.length){const ti=G.market.findIndex(c=>c.winner==='tie');if(ti>=0)startTiebreak(ti);else finishTurn();}}}
+    if(G.phase==='TIEBREAK'&&G.tb){if(G.tb.rollF>0){G.tb.rollF--;}else{G.tb.revF=(G.tb.revF||0)+1;if(G.tb.revF===28)G.tb.showResult=true;if(G.tb.revF===46)G.tb.showBtn=true;}}
+
+    p.noStroke();p.fill(13,18,32);p.rect(0,0,CW,TB_H);p.stroke(28,38,62);p.strokeWeight(1);p.line(0,TB_H,CW,TB_H);
+    p.noStroke();p.fill(14,18,32);p.rect(0,AZ.y,CW,AZ.h);p.noStroke();p.fill(14,18,32);p.rect(0,PZ.y,CW,PZ.h);
+
+    // AI info (left of top bar)
+    p.fill(180,86,86);p.textAlign(p.LEFT,p.TOP);p.textSize(13);p.text(L.opp,16,6);p.textSize(32);p.text(G.aScore+'pt',16,20);
+    const ai2=sum(G.aIncome);let aiY=56;if(ai2>0){p.fill(152,68,68);p.textSize(12);p.text(L.oppIncome(ai2),16,aiY);aiY+=16;}p.fill(105,115,158);p.textSize(12);p.text(L.dicePerTurn(G.aPerTurn),16,aiY);
+
+    // Turn + dots (center)
+    p.textFont('Mochiy Pop One, sans-serif');p.fill(175,185,218);p.textAlign(p.CENTER,p.CENTER);p.textSize(16);p.text(`${L.turnLabel} ${G.turn} / ${G.totalTurns}`,CW/2,14);p.textFont('sans-serif');
+    const dotR=6,dotGap=4,nDots=G.totalTurns,dotW=nDots*(dotR*2)+(nDots-1)*dotGap;let dotX=CW/2-dotW/2+dotR;
+    for(let i=0;i<nDots;i++){p.noStroke();if(i<G.turn-1)p.fill(52,192,108);else if(i===G.turn-1){p.fill(215,200,55);p.stroke(255,220,80);p.strokeWeight(1.5);}else p.fill(36,46,74);p.ellipse(dotX,35,i===G.turn-1?dotR*2+2:dotR*2,i===G.turn-1?dotR*2+2:dotR*2);p.noStroke();dotX+=dotR*2+dotGap;}
+
+    // Settings button (right of top bar)
+    drawConfigBtn();
+
+    // AI dice
+    const adl=aDiceLayout(G.aPool.length,G.aKeepVis);
+    if(G.aKeepVis>0&&adl.keptW>0){const kx=adl.keptStartX-6,ky=AZ.y+12,kw=adl.keptW+12,kh=DSS+20;p.noFill();p.stroke(215,172,50);p.strokeWeight(1.5);p.rect(kx,ky,kw,kh,8);p.noStroke();p.fill(215,172,50);p.textAlign(p.CENTER,p.BOTTOM);p.textSize(12);p.text(L.keepFull(G.aKeepVis),kx+kw/2,ky+2);}
+    adl.positions.forEach(pos=>{drawDie(pos.x,AZ.y+18,0,DSS,pos.held?[148,112,40]:[48,62,105],false,true);if(pos.held){p.noFill();p.stroke(215,172,50);p.strokeWeight(2.5);p.rect(pos.x+1,AZ.y+19,DSS-2,DSS-2,6);p.noStroke();}});
+
+    for(let i=0;i<G.market.length;i++)drawCard(i);
+
+    // Player info + dice
+    p.fill(58,188,106);p.textAlign(p.LEFT,p.TOP);p.textSize(13);p.text(L.you,16,PZ.y+6);p.textSize(32);p.text(G.pScore+'pt',16,PZ.y+20);
+    const pi=sum(G.pIncome);let pY=PZ.y+56;if(pi>0){p.fill(46,160,84);p.textSize(12);p.text(L.incomeLabel(pi),16,pY);pY+=16;}p.fill(105,115,158);p.textSize(12);p.text(L.dicePerTurn(G.pPerTurn),16,pY);
+    if(G.phase==='ASSIGN'||G.phase==='ROLLING'){const rolling=G.phase==='ROLLING';p.fill(rolling?[145,155,195]:G.selSet.size>0?[255,198,42]:[135,145,182]);p.textAlign(p.CENTER,p.TOP);p.textSize(13);p.text(rolling?L.rolling:G.selSet.size>0?L.instrSel(G.selSet.size):L.instrNone,CW/2,PZ.y+6);}
+    const allUnass=G.pDice.filter(d=>d.card===null),keptD=allUnass.filter(d=>!d.fresh),freshD=allUnass.filter(d=>d.fresh);
+    const pdl=pDiceLayout(freshD,keptD);
+    pdl.keptBoxes.forEach(box=>{p.noFill();p.stroke(215,172,50);p.strokeWeight(1.5);p.rect(box.x,box.y,box.w,box.h,9);p.noStroke();p.fill(215,172,50);p.textAlign(p.CENTER,p.BOTTOM);p.textSize(12);p.text(L.keepFull(keptD.length),box.x+box.w/2,box.y+2);});
+    if(pdl.overflow){p.fill(212,155,50);p.textAlign(p.CENTER,p.TOP);p.textSize(12);p.text(`+${allUnass.length-D_MAXCOLS*2}…`,CW/2,PZ.y+72+(DS+D_GAP+4)*2);}
+    if(isDragging&&dragS&&dragE){p.noFill();p.stroke(255,202,38,148);p.strokeWeight(1.5);p.rect(Math.min(dragS.x,dragE.x),Math.min(dragS.y,dragE.y),Math.abs(dragE.x-dragS.x),Math.abs(dragE.y-dragS.y));}
+    pdl.positions.forEach((pos,pi2)=>{const d=pi2<pdl.kC?keptD[pi2]:freshD[pi2-pdl.kC];if(!d)return;const idx=G.pDice.indexOf(d);const dv=d.rollF>0?rng(1,6):d.val;const sc=d.bounceF>0?(1+d.bounceF*0.045):1;drawDie(pos.x,pos.y,dv,DS,pos.isKept?[155,118,42]:[58,108,192],G.selSet.has(idx),false,sc);if(pos.isKept){p.noFill();p.stroke(215,172,50);p.strokeWeight(2.5);p.rect(pos.x+1,pos.y+1,DS-2,DS-2,7);p.noStroke();}});
+
+    if(G.phase==='ASSIGN'){const hC=hov(CW/2-108,CH-44,216,36);p.fill(hC?[58,148,78]:[36,108,56]);p.rect(CW/2-108,CH-44,216,36,9);p.fill(202,245,215);p.textAlign(p.CENTER,p.CENTER);p.textSize(16);p.text(L.confirmBtn,CW/2,CH-26);}
+    if(G.phase==='TURN_END'){const lbl=G.turn>=G.totalTurns?L.resultBtn:L.nextBtn;const hN=hov(CW/2-108,CH-44,216,36);p.fill(hN?[55,95,172]:[36,65,138]);p.rect(CW/2-108,CH-44,216,36,9);p.fill(202,218,255);p.textAlign(p.CENTER,p.CENTER);p.textSize(16);p.text(lbl,CW/2,CH-26);}
+    if(G.phase==='TIEBREAK'&&G.tb)drawTiebreak();
+  }
+
+  function drawTiebreak(){
+    const tb=G.tb,card=G.market[tb.ci],rolling=tb.rollF>0;
+    p.fill(0,0,0,162);p.noStroke();p.rect(0,0,CW,CH);
+    p.fill(16,22,38);p.stroke(90,110,168);p.strokeWeight(2);p.rect(CW/2-330,CH/2-185,660,370,14);
+    p.noStroke();p.fill(202,168,50);p.textAlign(p.CENTER,p.CENTER);p.textSize(20);p.text(L.tbTitle(L.cardNames[card.key]||card.key),CW/2,CH/2-155);
+    const dS=60,dGap=16,gW=3*dS+2*dGap,pSX=CW/2-40-gW,aSX=CW/2+40,diceY=CH/2-82;
+    p.fill(65,188,125);p.textSize(17);if(!rolling)p.text(L.tbYouScore(tb.pt),CW/2-40-gW/2,diceY-22);
+    p.fill(182,85,85);if(!rolling)p.text(L.tbOppScore(tb.at),CW/2+40+gW/2,diceY-22);
+    tb.pD.forEach((v,i)=>drawDie(pSX+i*(dS+dGap),diceY,rolling?rng(1,6):v,dS,[58,108,192],false,false));
+    p.fill(148,158,200);p.textSize(24);p.textAlign(p.CENTER,p.CENTER);p.text('VS',CW/2,diceY+dS/2);
+    tb.aD.forEach((v,i)=>drawDie(aSX+i*(dS+dGap),diceY,rolling?rng(1,6):v,dS,[152,65,65],false,false));
+    if(tb.showResult){p.textSize(26);if(tb.res==='p'){p.fill(68,215,130);p.text(L.tbWinP,CW/2,CH/2+52);}else if(tb.res==='a'){p.fill(212,82,82);p.text(L.tbWinA,CW/2,CH/2+52);}else{p.fill(208,175,52);p.text(L.tbAgain,CW/2,CH/2+52);}}
+    if(tb.showBtn){const lbl=tb.res==='again'?L.tbRetry:L.tbContinue,bx=CW/2-92,by=CH/2+86;const hB=hov(bx,by,184,40);p.fill(hB?[52,92,168]:[34,64,135]);p.rect(bx,by,184,40,9);p.fill(202,218,255);p.textAlign(p.CENTER,p.CENTER);p.textSize(17);p.text(lbl,CW/2,by+20);}
+  }
+
+  function drawResult(){
+    p.background(8,11,20);const win=G.pScore>G.aScore?'p':G.aScore>G.pScore?'a':'draw';
+    p.textAlign(p.CENTER,p.CENTER);p.textSize(64);p.fill(win==='p'?[68,215,128]:win==='a'?[215,72,72]:[205,178,52]);p.text(win==='p'?L.resultWin:win==='a'?L.resultLose:L.resultDraw,CW/2,CH/2-105);
+    p.textSize(30);p.fill(65,188,128);p.text(L.resultYou(G.pScore),CW/2,CH/2-40);p.fill(182,85,85);p.text(L.resultOpp(G.aScore),CW/2,CH/2+8);
+    p.fill(148,162,205);p.textSize(16);p.text(L.resultDiff(Math.abs(G.pScore-G.aScore),win),CW/2,CH/2+55);
+    p.fill(85,98,148);p.textSize(13);p.text(L.resultInc(sum(G.pIncome),sum(G.aIncome)),CW/2,CH/2+85);
+    const hR=hov(CW/2-118,CH/2+112,236,52);p.fill(hR?[52,108,178]:[34,75,142]);p.rect(CW/2-118,CH/2+112,236,52,10);
+    p.fill(202,218,255);p.textSize(18);p.text(L.retryBtn,CW/2,CH/2+138);
+  }
+
+  // ══════════════════════════════════════════
+  // p5 SETUP / DRAW
+  // ══════════════════════════════════════════
+  p.setup=function(){p.createCanvas(CW,CH).parent('gc');p.pixelDensity(1);};
+  p.draw=function(){
+    if(scene==='TITLE')drawTitle();
+    else if(scene==='CONFIG')drawConfig();
+    else if(scene==='GAME')drawGame();
+    else if(scene==='RESULT')drawResult();
+  };
+
+  // ══════════════════════════════════════════
+  // INPUT
+  // ══════════════════════════════════════════
+  p.mousePressed=function(){
+    if(scene==='GAME'&&G.phase==='ASSIGN'){dragS={x:p.mouseX,y:p.mouseY};dragE={x:p.mouseX,y:p.mouseY};isDragging=false;}
+    if(scene==='TITLE')EGG.onPress(p.mouseX,p.mouseY);
+  };
+  p.mouseDragged=function(){
+    if(scene==='TITLE')return;
+    if(!dragS)return;dragE={x:p.mouseX,y:p.mouseY};const dx=dragE.x-dragS.x,dy=dragE.y-dragS.y;if(Math.sqrt(dx*dx+dy*dy)>14)isDragging=true;
+  };
+  p.mouseReleased=function(){
+    if(scene==='TITLE'){
+      if(EGG.onRelease(p.mouseX,p.mouseY))return;
+      if(EGG.heldIdx>=0)return;
+      if(hov(14,8,80,26)){setLang('ja');return;}
+      if(hov(14,36,80,26)){setLang('en');return;}
+      if(hov(CW/2-130,CH-118,260,48)){initGame();scene='GAME';EGG.reset();return;}
+      if(hov(CW/2-64,CH-56,128,34)){scene='CONFIG';return;}
+      return;
+    }
+    if(isDragging&&scene==='GAME'&&G.phase==='ASSIGN'&&dragS&&dragE){
+      const x1=Math.min(dragS.x,dragE.x),x2=Math.max(dragS.x,dragE.x),y1=Math.min(dragS.y,dragE.y),y2=Math.max(dragS.y,dragE.y);
+      const aU=G.pDice.filter(d=>d.card===null),kD=aU.filter(d=>!d.fresh),fD=aU.filter(d=>d.fresh);
+      const lay=pDiceLayout(fD,kD);
+      lay.positions.forEach((pos,pi2)=>{const d=pi2<lay.kC?kD[pi2]:fD[pi2-lay.kC];if(d&&pos.x+DS>x1&&pos.x<x2&&pos.y+DS>y1&&pos.y<y2)G.selSet.add(G.pDice.indexOf(d));});
+      dragS=null;dragE=null;isDragging=false;return;
+    }
+    dragS=null;dragE=null;isDragging=false;
+    if(scene==='CONFIG'){
+      if(hov(28,28,118,36)){EGG.reset();scene='TITLE';return;}
+      const bw=72,bh=40,gap=10;
+      const sxT=CW/2-((bw+gap)*TURN_OPTIONS.length-gap)/2;TURN_OPTIONS.forEach((v,i)=>{if(hov(sxT+i*(bw+gap),118,bw,bh))CFG.turns=v;});
+      const bw3=Math.min(105,Math.floor((CW-120)/3)-14),gap3=10,sx3=CW/2-((bw3+gap3)*3-gap3)/2;[0,1,2].forEach(i=>{if(hov(sx3+i*(bw3+gap3),208,bw3,40))CFG.aiDiff=i;});
+      if(hov(CW/2-78,298,48,40))CFG.pDice=clamp(CFG.pDice-1,1,10);if(hov(CW/2+30,298,48,40))CFG.pDice=clamp(CFG.pDice+1,1,10);
+      if(hov(CW/2-78,386,48,40))CFG.aDice=clamp(CFG.aDice-1,1,10);if(hov(CW/2+30,386,48,40))CFG.aDice=clamp(CFG.aDice+1,1,10);
+      const sxC=CW/2-((bw+gap)*CARD_OPTIONS.length-gap)/2;CARD_OPTIONS.forEach((v,i)=>{if(hov(sxC+i*(bw+gap),474,bw,bh))CFG.marketCards=v;});
+      const bwK=Math.min(105,Math.floor((CW-120)/4)-14),gapK=10,sxK=CW/2-((bwK+gapK)*4-gapK)/2;[0,1,2,3].forEach(i=>{if(hov(sxK+i*(bwK+gapK),562,bwK,40))CFG.keepLimit=i;});
+      if(hov(CW/2-138,634,276,50)){initGame();scene='GAME';}return;
+    }
+    if(scene==='RESULT'){if(hov(CW/2-118,CH/2+112,236,52)){EGG.reset();scene='TITLE';}return;}
+    if(scene!=='GAME')return;
+    // Settings button in game
+    if(hov(CFG_BTN.x,CFG_BTN.y,CFG_BTN.w,CFG_BTN.h)){scene='CONFIG';return;}
+    if(G.phase==='TIEBREAK'&&G.tb&&G.tb.showBtn){const bx=CW/2-92,by=CH/2+86;if(hov(bx,by,184,40)){if(G.tb.res==='again')startTiebreak(G.tb.ci);else onTbDone(G.tb.res);}return;}
+    if(G.phase==='ASSIGN'){
+      if(hov(CW/2-108,CH-44,216,36)){
+        G.pDice.forEach(d=>{if(d.card===null)d.fresh=false;});
+        G.pKeepNext=G.pDice.filter(d=>d.card===null).map(d=>({val:d.val}));
+        const maxK=KEEP_LIMIT_VALS[CFG.keepLimit];if(G.pKeepNext.length>maxK)G.pKeepNext=G.pKeepNext.slice(0,maxK);
+        resolveAll();G.phase='REVEAL';G.revStep=-1;G.revTimer=30;return;
+      }
+      const aU=G.pDice.filter(d=>d.card===null),kD=aU.filter(d=>!d.fresh),fD=aU.filter(d=>d.fresh);
+      const lay=pDiceLayout(fD,kD);
+      for(let pi2=0;pi2<lay.positions.length;pi2++){const pos=lay.positions[pi2];const d=pi2<lay.kC?kD[pi2]:fD[pi2-lay.kC];if(d&&hov(pos.x,pos.y,DS,DS)){const idx=G.pDice.indexOf(d);if(G.selSet.has(idx))G.selSet.delete(idx);else G.selSet.add(idx);return;}}
+      if(G.selSet.size>0){for(let i=0;i<G.market.length;i++){const r=cRect(i);if(hov(r.x,r.y,r.w,r.h)){G.selSet.forEach(idx=>{G.pDice[idx].card=i;});G.selSet.clear();return;}}G.selSet.clear();return;}
+      for(let ci=0;ci<G.market.length;ci++){const asgn=G.pDice.filter(d=>d.card===ci);for(let di=0;di<asgn.length;di++){const s=cSlot(ci,di);if(hov(s.x,s.y,DSS,DSS)){asgn[di].card=null;asgn[di].fresh=true;return;}}}
+      return;
+    }
+    if(G.phase==='TURN_END'){if(hov(CW/2-108,CH-44,216,36)){if(G.turn>=G.totalTurns)scene='RESULT';else{G.turn++;beginTurn();}}}
+  };
+},'gc');
+</script>
+</body>
+</html>
