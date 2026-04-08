@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dice Auction v0.2.6</title>
+<title>Dice Auction v0.2.7.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
@@ -30,7 +30,7 @@ new p5(p => {
   // ══════════════════════════════════════════
   const LANG={
     ja:{
-      gameTitle:'ダイスオークション', version:'v0.2.6',
+      gameTitle:'ダイスオークション', version:'v0.2.7.3',
       titleSummary:[
         'ダイスをカードに割り当てて入札 — 相手より高い合計値でカードを獲得',
         'キープしたダイスは次のターンも使える — でも個数は相手に見えてしまう',
@@ -101,7 +101,7 @@ new p5(p => {
       eggPull:'引っ張って離すと飛んでいくよ！',
     },
     en:{
-      gameTitle:'Dice Auction', version:'v0.2.6',
+      gameTitle:'Dice Auction', version:'v0.2.7.3',
       titleSummary:[
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -360,7 +360,7 @@ new p5(p => {
       pendingEffects:[],
       effectAnimTimer:0,effectAnimMsgs:[],effectHighlights:[],
       pendingSwapForPlayer:false,
-      swapAnim:{active:false,dieIdx:-1,timer:0,newVal:0}, // SWAP visual state
+      swapAnim:{active:false,dieIdx:-1,timer:0,newVal:0},
       floatingTexts:[],
       aiEmotion:'(^_^)',
     };
@@ -438,7 +438,6 @@ new p5(p => {
       const outgoing=G.pDice[dieIdx].val;
       G.pDice[dieIdx].val=incoming;
       aiDie.val=outgoing;
-      // Trigger swap animation: the die glows with its new value
       G.swapAnim={active:true,dieIdx,timer:70,newVal:incoming};
       G.effectHighlights=[dieIdx];
       addFloating('⇄ '+incoming,diePosX,diePosY-20,[208,168,50],36);
@@ -467,11 +466,18 @@ new p5(p => {
     }return 4;
   }
 
+  // FIX①: specialCard の有無に依存しない構造へ変更
+  // specialCard が null でも市場カードへの入札は正常に行われる（将来の「特殊カードなし」モード対応）
   function aiDecide(){
     const char=AI_CHARS[CFG.aiChar];
-    const nCards=G.market.length,nSlots=nCards+1;
-    if(!G.specialCard)return;
-    const cardEvals=[...G.market.map(evalCard),evalSpecial(G.specialCard)];
+    const nCards=G.market.length;
+    const hasSpecial=!!G.specialCard;
+    const nSlots=nCards+(hasSpecial?1:0);
+    if(nSlots===0)return;
+    const cardEvals=[
+      ...G.market.map(evalCard),
+      ...(hasSpecial?[evalSpecial(G.specialCard)]:[]),
+    ];
     const pool=shuffle([...G.aPool]);
     const bids=Array.from({length:nSlots},()=>[]);
     let rem=[...pool];
@@ -516,7 +522,7 @@ new p5(p => {
     }
     G.aKeepVis=G.aKeepNext.length;
     G.market.forEach((c,i)=>{c.aBid=sum(bids[i].map(d=>d.val));});
-    if(G.specialCard)G.specialCard.aBid=sum(bids[nCards].map(d=>d.val));
+    if(hasSpecial)G.specialCard.aBid=sum(bids[nCards].map(d=>d.val));
     updateAIEmotion();
   }
 
@@ -542,8 +548,9 @@ new p5(p => {
       if(w&&w!=='tie'){
         const eff=sc.effectType;
         if(eff==='OPPONENT_MINUS'){
-          if(w==='p'){const was=G.aScore;G.aScore=Math.max(0,G.aScore-10);addFloating(`-${was-G.aScore}pt`,200,TB_H+10,[215,70,70],44);}
-          else{const was=G.pScore;G.pScore=Math.max(0,G.pScore-10);addFloating(`-${was-G.pScore}pt`,200,PZ.y+14,[215,70,70],44);}
+          // FIX④: FT_POS 定数で座標を一元管理
+          if(w==='p'){const was=G.aScore;G.aScore=Math.max(0,G.aScore-10);addFloating(`-${was-G.aScore}pt`,FT_POS.AI_X,FT_POS.AI_Y,[215,70,70],44);}
+          else{const was=G.pScore;G.pScore=Math.max(0,G.pScore-10);addFloating(`-${was-G.pScore}pt`,FT_POS.P_X,FT_POS.P_Y,[215,70,70],44);}
         }else if(eff==='SELF_MULTIPLY'){selfMultOwner=w;}
         else G.pendingEffects.push({type:eff,owner:w});
       }
@@ -551,10 +558,10 @@ new p5(p => {
     G.pScore+=sum(G.pIncome);G.aScore+=sum(G.aIncome);
     if(selfMultOwner==='p'){
       const before=G.pScore;G.pScore=Math.floor(G.pScore*1.2);
-      const gain=G.pScore-before;if(gain>0)addFloating(`+${gain}pt`,200,PZ.y+14,[68,215,128],44);
+      const gain=G.pScore-before;if(gain>0)addFloating(`+${gain}pt`,FT_POS.P_X,FT_POS.P_Y,[68,215,128],44);
     }else if(selfMultOwner==='a'){
       const before=G.aScore;G.aScore=Math.floor(G.aScore*1.2);
-      const gain=G.aScore-before;if(gain>0)addFloating(`+${gain}pt`,200,TB_H+10,[215,178,50],40);
+      const gain=G.aScore-before;if(gain>0)addFloating(`+${gain}pt`,FT_POS.AI_X,FT_POS.AI_Y,[215,178,50],40);
     }
     updateAIEmotion();G.phase='TURN_END';
   }
@@ -598,10 +605,15 @@ new p5(p => {
   const TB_H=56,AZ={y:56,h:88},PZ={y:430,h:252};
   const CARD_H=276,CARD_Y=148,DS=50,DSS=33,D_GAP=7,D_MAXCOLS=16;
   const SC={x:1058,y:CARD_Y,w:206,h:CARD_H};
-  // Unified button positions
-  // Top-right layout: [?] [← 戻る]
-  const BACK_BTN={x:CW-88,y:9,w:80,h:36};  // rightmost
-  const HELP_BTN={x:CW-132,y:9,w:36,h:36}; // left of back
+  const BACK_BTN={x:CW-88,y:9,w:80,h:36};
+  const HELP_BTN={x:CW-132,y:9,w:36,h:36};
+  const CFG_LX=40,CFG_LW=560,CFG_RX=630,CFG_RW=610;
+  // FIX④: フローティングテキスト表示座標を定数として一元管理
+  // AI スコア表示 (158, 18) 付近 / Player スコア表示 (16, PZ.y+18) 付近
+  const FT_POS={
+    AI_X:200, AI_Y:TB_H+10,  // AI スコア近傍のフロート表示起点
+    P_X: 200, P_Y: PZ.y+14,  // Player スコア近傍のフロート表示起点
+  };
 
   function getCardLayout(){
     const n=G.market?G.market.length:CFG.marketCards;
@@ -718,7 +730,7 @@ new p5(p => {
   }
 
   // ══════════════════════════════════════════
-  // HELP OVERLAY — LEFT TABS + RIGHT CONTENT
+  // HELP OVERLAY
   // ══════════════════════════════════════════
   function drawHelp(){
     p.noStroke();p.fill(0,0,0,175);p.rect(0,0,CW,CH);
@@ -726,7 +738,6 @@ new p5(p => {
     p.fill(14,18,32);p.stroke(62,88,145);p.strokeWeight(2);p.rect(bx,by,bw,bh,14);p.noStroke();
     p.textFont('Mochiy Pop One, sans-serif');p.fill(52,192,108);p.textAlign(p.CENTER,p.TOP);p.textSize(20);p.text(L.helpTitle,CW/2,by+14);p.textFont('sans-serif');
     p.fill(38,52,90);p.rect(bx+8,by+44,bw-16,2);
-    // Left tab sidebar
     const sbw=162,sbx=bx+8,cty=by+52;
     L.helpTabs.forEach((tab,i)=>{
       const ty=cty+i*44,sel=helpTab===i;
@@ -734,7 +745,6 @@ new p5(p => {
       p.fill(sel?[68,215,128]:[125,138,175]);p.textAlign(p.LEFT,p.CENTER);p.textSize(13);p.text((sel?'▶ ':' ∙ ')+tab,sbx+10,ty+19);
     });
     p.fill(38,52,90);p.rect(bx+sbw+14,by+50,2,bh-58);
-    // Right content
     const cx=bx+sbw+22,cy2=by+52,cw2=bw-sbw-30;
     p.noStroke();
     switch(helpTab){
@@ -766,11 +776,9 @@ new p5(p => {
         L.aiCharNames.forEach((name,i)=>{
           const sy=cy2+32+i*116;
           p.fill(20,26,46);p.rect(cx,sy,cw2-10,110,8);
-          // Portrait or placeholder
           if(charImgs[i]){
             p.imageMode(p.CORNER);p.image(charImgs[i],cx+8,sy+6,45,80);
           }else{
-            // TODO: replace with character portrait image
             p.fill(35,30,55);p.rect(cx+8,sy+6,45,80,4);
             p.fill(128,100,180);p.textAlign(p.CENTER,p.CENTER);p.textSize(10);p.text(L.aiTBD,cx+30,sy+46);
           }
@@ -782,7 +790,6 @@ new p5(p => {
         break;
       }
     }
-    // Close button
     const cbx=CW/2-58,cby=by+bh-44;
     const hC=hov(cbx,cby,116,34);
     p.fill(hC?[55,95,165]:[38,68,128]);p.rect(cbx,cby,116,34,9);
@@ -816,42 +823,39 @@ new p5(p => {
   }
 
   // ══════════════════════════════════════════
-  // SCENE: CONFIG (Two-column layout)
-  // Config: Left=settings, Right=AI char select + portrait
+  // SCENE: CONFIG
   // ══════════════════════════════════════════
-  // Left column: x=40 to 590, Right column: x=620 to 1250
-  const CFG_LX=40,CFG_LW=560,CFG_RX=630,CFG_RW=610;
 
   function drawConfig(){
     p.background(8,11,20);
     p.noStroke();p.fill(205,212,238);p.textAlign(p.CENTER,p.TOP);p.textSize(30);p.text(L.configTitle,CW/2,28);
 
-    // ── Left panel ──
     cfgRowL(L.cfgTurns,100,TURN_OPTIONS,CFG.turns);
     cfgStepperL(L.cfgPDice,190,'pDice',1,10);
     cfgStepperL(L.cfgADice,264,'aDice',1,10);
     cfgRowL(L.cfgCards,340,CARD_OPTIONS,CFG.marketCards);
     cfgRow3L(L.cfgKeepLimit,418,L.keepLimitLabels,CFG.keepLimit);
 
-    // ── Right panel — AI char selection (2x2 grid) ──
     p.fill(155,168,205);p.textAlign(p.CENTER,p.CENTER);p.textSize(14);p.text(L.cfgAIChar,CFG_RX+CFG_RW/2,68);
     const cbw=136,cbh=54,cgap=12;
     const csx=CFG_RX+(CFG_RW-2*cbw-cgap)/2;
     for(let i=0;i<4;i++){
       const row=Math.floor(i/2),col=i%2;
       const bx=csx+col*(cbw+cgap),by=82+row*(cbh+cgap);
-      const sel=CFG.aiChar===i;
-      p.fill(sel?[38,78,55]:[22,30,50]);p.stroke(sel?[52,155,85]:[52,66,100]);p.strokeWeight(sel?2:1.5);p.rect(bx,by,cbw,cbh,8);p.noStroke();
-      p.fill(sel?[215,248,218]:[165,175,210]);p.textAlign(p.CENTER,p.CENTER);p.textSize(15);p.text(L.aiCharFaces[i],bx+cbw/2,by+16);
-      p.fill(sel?[185,248,198]:[145,155,192]);p.textSize(13);p.text(L.aiCharNames[i],bx+cbw/2,by+34);
+      const sel=CFG.aiChar===i,hB=hov(bx,by,cbw,cbh);
+      p.fill(sel?[38,78,55]:hB?[30,48,72]:[22,30,50]);
+      p.stroke(sel?[52,155,85]:hB?[68,100,148]:[52,66,100]);
+      p.strokeWeight(sel?2:1.5);p.rect(bx,by,cbw,cbh,8);p.noStroke();
+      p.fill(sel?[215,248,218]:hB?[190,205,238]:[165,175,210]);
+      p.textAlign(p.CENTER,p.CENTER);p.textSize(15);p.text(L.aiCharFaces[i],bx+cbw/2,by+16);
+      p.fill(sel?[185,248,198]:hB?[175,188,220]:[145,155,192]);
+      p.textSize(13);p.text(L.aiCharNames[i],bx+cbw/2,by+34);
     }
 
-    // ── Right panel — Character portrait area ──
     const portY=222,portH=370;
     const selIdx=CFG.aiChar;
     p.noStroke();p.fill(16,20,36);p.rect(CFG_RX,portY,CFG_RW,portH,12);
     if(charImgs[selIdx]){
-      // Draw portrait centered
       const img=charImgs[selIdx];
       const imgAspect=img.width/img.height;
       const maxH=portH-80,maxW=CFG_RW-40;
@@ -860,17 +864,14 @@ new p5(p => {
       else{dh=maxH;dw=maxH*imgAspect;}
       p.imageMode(p.CENTER);p.image(img,CFG_RX+CFG_RW/2,portY+portH/2-20,dw,dh);
     }else{
-      // TODO: replace with character portrait image
       p.fill(35,28,60);p.rect(CFG_RX+CFG_RW/2-60,portY+40,120,180,8);
       p.fill(130,100,185);p.textAlign(p.CENTER,p.CENTER);p.textSize(40);p.text('?',CFG_RX+CFG_RW/2,portY+130);
       p.fill(105,90,148);p.textSize(13);p.text(L.aiTBD,CFG_RX+CFG_RW/2,portY+230);
     }
-    // Name + desc under portrait
     p.noStroke();p.fill(205,215,245);p.textAlign(p.CENTER,p.CENTER);p.textSize(17);
     p.textFont('Mochiy Pop One, sans-serif');p.text(L.aiCharNames[selIdx],CFG_RX+CFG_RW/2,portY+portH-52);p.textFont('sans-serif');
     p.fill(145,155,192);p.textSize(12);p.text(L.aiHelpDescs[selIdx],CFG_RX+CFG_RW/2-CFG_RW/2+20,portY+portH-34,CFG_RW-40,30);
 
-    // Start button (full width, bottom)
     const hS=hov(CFG_LX,612,CFG_LW,50);
     p.textFont('Mochiy Pop One, sans-serif');p.fill(hS?[52,148,82]:[34,108,58]);p.rect(CFG_LX,612,CFG_LW,50,10);
     p.fill(205,248,218);p.textAlign(p.CENTER,p.CENTER);p.textSize(18);p.text(L.configStart,CFG_LX+CFG_LW/2,637);p.textFont('sans-serif');
@@ -880,17 +881,32 @@ new p5(p => {
     if(helpOpen)drawHelp();
   }
 
-  // Left-column config helpers
+  // 描画・クリック判定で共用するボタン幅計算 (clamp を一箇所に集約)
+  function cfgRowBtnW(opts){return clamp(Math.floor((CFG_LW-10*(opts.length-1))/opts.length),50,90);}
+
   function cfgRowL(label,y,opts,cur){
     p.noStroke();p.fill(148,158,195);p.textAlign(p.LEFT,p.CENTER);p.textSize(13);p.text(label,CFG_LX,y-16);
-    const bw=clamp(Math.floor((CFG_LW-10*(opts.length-1))/opts.length),50,90),bh=36,gap=10;
-    const sx=CFG_LX;
-    opts.forEach((v,i)=>{const bx=sx+i*(bw+gap),sel=cur===v;p.fill(sel?[52,152,85]:[26,34,56]);p.stroke(sel?[52,152,85]:[52,66,100]);p.strokeWeight(1.5);p.rect(bx,y,bw,bh,8);p.noStroke();p.fill(sel?[208,248,218]:[145,155,192]);p.textSize(15);p.textAlign(p.CENTER,p.CENTER);p.text(v,bx+bw/2,y+bh/2);});
+    const bw=cfgRowBtnW(opts),bh=36,gap=10,sx=CFG_LX;
+    opts.forEach((v,i)=>{
+      const bx=sx+i*(bw+gap),sel=cur===v,hB=hov(bx,y,bw,bh);
+      p.fill(sel?[52,152,85]:hB?[40,58,90]:[26,34,56]);
+      p.stroke(sel?[52,152,85]:hB?[72,96,148]:[52,66,100]);p.strokeWeight(sel?2:1.5);
+      p.rect(bx,y,bw,bh,8);p.noStroke();
+      p.fill(sel?[208,248,218]:hB?[185,198,232]:[145,155,192]);
+      p.textSize(15);p.textAlign(p.CENTER,p.CENTER);p.text(v,bx+bw/2,y+bh/2);
+    });
   }
   function cfgRow3L(label,y,opts,cur){
     p.noStroke();p.fill(148,158,195);p.textAlign(p.LEFT,p.CENTER);p.textSize(13);p.text(label,CFG_LX,y-16);
     const bw=Math.floor((CFG_LW-10*(opts.length-1))/opts.length),bh=36,gap=10,sx=CFG_LX;
-    opts.forEach((v,i)=>{const bx=sx+i*(bw+gap),sel=cur===i;p.fill(sel?[52,152,85]:[26,34,56]);p.stroke(sel?[52,152,85]:[52,66,100]);p.strokeWeight(1.5);p.rect(bx,y,bw,bh,8);p.noStroke();p.fill(sel?[208,248,218]:[145,155,192]);p.textSize(13);p.textAlign(p.CENTER,p.CENTER);p.text(v,bx+bw/2,y+bh/2);});
+    opts.forEach((v,i)=>{
+      const bx=sx+i*(bw+gap),sel=cur===i,hB=hov(bx,y,bw,bh);
+      p.fill(sel?[52,152,85]:hB?[40,58,90]:[26,34,56]);
+      p.stroke(sel?[52,152,85]:hB?[72,96,148]:[52,66,100]);p.strokeWeight(sel?2:1.5);
+      p.rect(bx,y,bw,bh,8);p.noStroke();
+      p.fill(sel?[208,248,218]:hB?[185,198,232]:[145,155,192]);
+      p.textSize(13);p.textAlign(p.CENTER,p.CENTER);p.text(v,bx+bw/2,y+bh/2);
+    });
   }
   function cfgStepperL(label,y,key,mn,mx2){
     p.noStroke();p.fill(148,158,195);p.textAlign(p.LEFT,p.CENTER);p.textSize(13);p.text(label,CFG_LX,y-16);
@@ -902,53 +918,97 @@ new p5(p => {
   }
 
   // ══════════════════════════════════════════
-  // SCENE: GAME
+  // SCENE: GAME — UPDATE (③ システムロジック分離)
+  // p.draw() から drawGame() より先に呼ばれ、状態変化のみを担う。描画は一切行わない。
   // ══════════════════════════════════════════
-  function drawGame(){
-    p.background(8,11,20);
-    p.noStroke(); // ── FIX: reset stroke state at start to prevent yellow border bug ──
-
-    // Phase updates
+  function updateGame(){
+    // ── ロールアニメーション & ロール完了処理
+    // 完了判定: 全freshダイスのrollF/bounceF が 0 になったとき（アニメ完了）
+    // _rollTotal はタイムアウト保険として残す（何らかの異常でアニメが終わらない場合のフォールバック）
     if(G.phase==='ROLLING'){
-      G._rollTotal--;G.pDice.forEach(d=>{if(d.rollF>0){d.rollF--;if(d.rollF===0)d.bounceF=12;}else if(d.bounceF>0)d.bounceF--;});
-      if(G._rollTotal<=0)processEffectsAfterRoll();
+      G._rollTotal--;
+      G.pDice.forEach(d=>{if(d.rollF>0){d.rollF--;if(d.rollF===0)d.bounceF=12;}else if(d.bounceF>0)d.bounceF--;});
+      const freshDice=G.pDice.filter(d=>d.fresh);
+      const animDone=freshDice.length===0||freshDice.every(d=>d.rollF===0&&d.bounceF===0);
+      if(animDone||G._rollTotal<=0)processEffectsAfterRoll();
     }
+    // ── エフェクト演出タイマー
     if(G.phase==='EFFECT_ANIM'){
       G.effectAnimTimer--;if(G.effectAnimTimer<=0){G.phase=G.pendingSwapForPlayer?'SWAP_SELECT':'ASSIGN';}
     }
+    // ── 公開フェーズ（1枚ずつ 30F ごと）
     if(G.phase==='REVEAL'){
       G.revTimer--;if(G.revTimer<=0){G.revStep++;G.revTimer=30;
         if(G.revStep>=G.market.length+1){const next=findNextTie();if(next)startTiebreak(next);else finishTurn();}}
     }
+    // ── タイブレーク内部タイマー
     if(G.phase==='TIEBREAK'&&G.tb){
       if(G.tb.rollF>0)G.tb.rollF--;
       else{G.tb.revF=(G.tb.revF||0)+1;if(G.tb.revF===28)G.tb.showResult=true;if(G.tb.revF===46)G.tb.showBtn=true;}
     }
+    // ── スワップアニメーションタイマー
     if(G.swapAnim&&G.swapAnim.active){G.swapAnim.timer--;if(G.swapAnim.timer<=0)G.swapAnim.active=false;}
+    // ── フローティングテキスト更新
     G.floatingTexts=G.floatingTexts.filter(ft=>{ft.y+=ft.vy;ft.vy*=0.98;ft.alpha-=3.5;return ft.alpha>0;});
+  }
 
-    // Backgrounds
+  // ══════════════════════════════════════════
+  // SCENE: GAME — DRAW (純粋に描画のみ)
+  // ══════════════════════════════════════════
+  function drawGame(){
+    p.background(8,11,20);
+    p.noStroke();
+
+    // AZ背景: ポートレートボックス幅(166)の右側のみ描画（左はポートレートで上書きする）
     p.fill(13,18,32);p.rect(0,0,CW,TB_H);
     p.stroke(28,38,62);p.strokeWeight(1);p.line(0,TB_H,CW,TB_H);p.noStroke();
-    p.fill(14,18,32);p.rect(0,AZ.y,CW,AZ.h);p.fill(14,18,32);p.rect(0,PZ.y,CW,PZ.h);
+    p.fill(14,18,32);p.rect(166,AZ.y,CW-166,AZ.h);  // ポートレート右端から右のみ
+    p.fill(14,18,32);p.rect(0,AZ.y,166,AZ.h);        // ポートレート下部も統一色で下地
+    p.fill(14,18,32);p.rect(0,PZ.y,CW,PZ.h);
 
-    // Top bar
-    p.fill(18,22,40);p.rect(0,0,150,TB_H);
-    p.fill(190,150,240);p.textAlign(p.CENTER,p.CENTER);p.textSize(18);p.text(G.aiEmotion||'(^_^)',75,24);
-    p.fill(175,145,218);p.textSize(11);p.text(L.aiCharNames[CFG.aiChar],75,44);
-    p.fill(180,86,86);p.textAlign(p.LEFT,p.TOP);p.textSize(12);p.text(L.opp,158,4);p.textSize(30);p.text(G.aScore+'pt',158,18);
-    const ai2=sum(G.aIncome);let aiY=52;
-    if(ai2>0){p.fill(152,68,68);p.textSize(11);p.text(L.oppIncome(ai2),158,aiY);aiY+=14;}
-    p.fill(105,115,158);p.textSize(11);p.text(L.dicePerTurn(G.aPerTurn),158,aiY);
+    // ── ポートレートボックス: 左エリア、TB_H+AZ.h 分の高さ（144px）──
+    // 先にAIゾーン背景を描いてからポートレートで上書き
+    const PORT_W=166, PORT_H=TB_H+AZ.h; // 166 x 144
+    p.fill(18,22,40);p.rect(0,0,PORT_W,PORT_H);
+    if(charImgs[CFG.aiChar]){
+      const img=charImgs[CFG.aiChar];
+      p.push();
+      const dc=p.drawingContext;
+      dc.save();dc.beginPath();dc.rect(2,1,PORT_W-4,PORT_H-2);dc.clip();
+      // 上部55%をトリミングして顔エリアを表示、幅いっぱいに拡大
+      const srcH=img.height*0.55;
+      const dw=PORT_W-4;
+      const dh=Math.round(srcH*(dw/img.width));
+      const dy=Math.max(1,Math.round((PORT_H-dh)/2));
+      p.imageMode(p.CORNER);
+      p.image(img,2,dy,dw,dh,0,0,img.width,srcH);
+      dc.restore();
+      p.pop();
+      // 下部グラデーション風フェードで境界を自然に
+      p.noStroke();
+      for(let i=0;i<24;i++){p.fill(14,18,32,i*8);p.rect(0,PORT_H-24+i,PORT_W,1);}
+      // 薄い暗オーバーレイ
+      p.fill(0,0,0,40);p.rect(0,0,PORT_W,PORT_H);
+    }else{
+      p.fill(30,24,55);p.rect(4,4,PORT_W-8,PORT_H-8,8);
+      p.fill(130,100,185);p.textAlign(p.CENTER,p.CENTER);p.textSize(32);p.text('?',PORT_W/2,PORT_H/2);
+    }
 
-    // Turn + dots (center, leave room for buttons on right and portrait on left)
+    // ── トップバー右エリア: 感情顔文字 → スコア → 収益・ダイス数 ──
+    p.noStroke();
+    p.fill(190,150,240);p.textAlign(p.LEFT,p.CENTER);p.textSize(20);p.text(G.aiEmotion||'(^_^)',174,14);
+    p.fill(180,86,86);p.textAlign(p.LEFT,p.TOP);p.textSize(12);p.text(L.opp,174,32);
+    p.textSize(24);p.text(G.aScore+'pt',204,30);
+    const ai2=sum(G.aIncome);let aiY=54;
+    if(ai2>0){p.fill(152,68,68);p.textSize(11);p.text(L.oppIncome(ai2),174,aiY);aiY+=14;}
+    p.fill(105,115,158);p.textSize(11);p.text(L.dicePerTurn(G.aPerTurn),174,aiY);
+
     p.textFont('Mochiy Pop One, sans-serif');p.fill(175,185,218);p.textAlign(p.CENTER,p.CENTER);p.textSize(15);p.text(`${L.turnLabel} ${G.turn} / ${G.totalTurns}`,CW/2-50,14);p.textFont('sans-serif');
     const dotR=5,dotGap=4,nDots=G.totalTurns,dotW=nDots*(dotR*2)+(nDots-1)*dotGap;let dotX=CW/2-50-dotW/2+dotR;
     for(let i=0;i<nDots;i++){p.noStroke();if(i<G.turn-1)p.fill(52,192,108);else if(i===G.turn-1){p.fill(215,200,55);p.stroke(255,220,80);p.strokeWeight(1.5);}else p.fill(36,46,74);p.ellipse(dotX,35,i===G.turn-1?dotR*2+2:dotR*2,i===G.turn-1?dotR*2+2:dotR*2);p.noStroke();dotX+=dotR*2+dotGap;}
 
     drawBackBtn();drawHelpBtn();
 
-    // AI dice
     const adl=aDiceLayout(G.aPool.length,G.aKeepVis);
     if(G.aKeepVis>0&&adl.keptW>0){const kx=adl.keptStartX-6,ky=AZ.y+10,kw=adl.keptW+12,kh=DSS+22;p.noFill();p.stroke(215,172,50);p.strokeWeight(1.5);p.rect(kx,ky,kw,kh,8);p.noStroke();p.fill(215,172,50);p.textAlign(p.CENTER,p.BOTTOM);p.textSize(11);p.text(L.keepFull(G.aKeepVis),kx+kw/2,ky+2);}
     adl.positions.forEach(pos=>{drawDie(pos.x,AZ.y+16,0,DSS,pos.held?[148,112,40]:[48,62,105],false,true);if(pos.held){p.noFill();p.stroke(215,172,50);p.strokeWeight(2.5);p.rect(pos.x+1,AZ.y+17,DSS-2,DSS-2,6);p.noStroke();}});
@@ -956,13 +1016,11 @@ new p5(p => {
     for(let i=0;i<G.market.length;i++)drawCard(i);
     drawSpecialCard();
 
-    // Player zone
     p.fill(58,188,106);p.textAlign(p.LEFT,p.TOP);p.textSize(12);p.text(L.you,16,PZ.y+4);p.textSize(30);p.text(G.pScore+'pt',16,PZ.y+18);
     const pi=sum(G.pIncome);let pY=PZ.y+52;
     if(pi>0){p.fill(46,160,84);p.textSize(11);p.text(L.incomeLabel(pi),16,pY);pY+=14;}
     p.fill(105,115,158);p.textSize(11);p.text(L.dicePerTurn(G.pPerTurn),16,pY);
 
-    // Instruction
     const showInstr=['ASSIGN','EFFECT_ANIM','SWAP_SELECT','ROLLING'].includes(G.phase);
     if(showInstr){
       let instrTxt='',instrCol=[135,145,182];
@@ -974,7 +1032,6 @@ new p5(p => {
       p.fill(...instrCol);p.textAlign(p.CENTER,p.TOP);p.textSize(13);p.text(instrTxt,CW/2-40,PZ.y+6);
     }
 
-    // Player dice
     const allUnass=G.pDice.filter(d=>d.card===null),keptD=allUnass.filter(d=>!d.fresh),freshD=allUnass.filter(d=>d.fresh);
     const pdl=pDiceLayout(freshD,keptD);
     pdl.keptBoxes.forEach(box=>{p.noFill();p.stroke(215,172,50);p.strokeWeight(1.5);p.rect(box.x,box.y,box.w,box.h,9);p.noStroke();p.fill(215,172,50);p.textAlign(p.CENTER,p.BOTTOM);p.textSize(11);p.text(L.keepFull(keptD.length),box.x+box.w/2,box.y+2);});
@@ -989,7 +1046,6 @@ new p5(p => {
       const isHighlighted=G.effectHighlights.includes(idx);
       const isSwapTarget=G.phase==='SWAP_SELECT';
       const hoverSwap=isSwapTarget&&hov(pos.x,pos.y,DS,DS);
-      // Swap animation glow
       const isSwapAnimating=G.swapAnim&&G.swapAnim.active&&G.swapAnim.dieIdx===idx;
       const swapPulse=isSwapAnimating?(Math.sin(G.swapAnim.timer*0.25)*0.5+0.5):0;
       let glowCol=null;
@@ -1003,7 +1059,6 @@ new p5(p => {
       if(hoverSwap&&!pos.isKept){p.noFill();p.stroke(215,142,50);p.strokeWeight(2.5);p.rect(pos.x-2,pos.y-2,DS+4,DS+4,9);p.noStroke();p.fill(215,165,50,200);p.textAlign(p.CENTER,p.BOTTOM);p.textSize(12);p.text('⇄',pos.x+DS/2,pos.y-3);}
     });
 
-    // Effect anim overlay
     if(G.phase==='EFFECT_ANIM'&&G.effectAnimMsgs.length>0){
       const prog=clamp(G.effectAnimTimer/90,0,1);
       p.fill(0,0,0,prog*120);p.noStroke();p.rect(0,CARD_Y-10,CW,CARD_H+20);
@@ -1014,14 +1069,12 @@ new p5(p => {
       p.fill(175,165,130,prog*180);p.textSize(14);p.textAlign(p.CENTER,p.CENTER);p.text(L.tapContinue,CW/2,CH/2+50);
     }
 
-    // Floating texts
     G.floatingTexts.forEach(ft=>{
       p.noStroke();p.fill(ft.col[0],ft.col[1],ft.col[2],ft.alpha);
       p.textAlign(p.CENTER,p.CENTER);p.textSize(ft.size);
       p.textFont('Mochiy Pop One, sans-serif');p.text(ft.txt,ft.x,ft.y);p.textFont('sans-serif');
     });
 
-    // Action buttons
     if(G.phase==='ASSIGN'){const hC=hov(CW/2-108,CH-42,216,34);p.fill(hC?[58,148,78]:[36,108,56]);p.rect(CW/2-108,CH-42,216,34,9);p.fill(202,245,215);p.textAlign(p.CENTER,p.CENTER);p.textSize(15);p.text(L.confirmBtn,CW/2,CH-25);}
     if(G.phase==='TURN_END'){const lbl=G.turn>=G.totalTurns?L.resultBtn:L.nextBtn;const hN=hov(CW/2-108,CH-42,216,34);p.fill(hN?[55,95,172]:[36,65,138]);p.rect(CW/2-108,CH-42,216,34,9);p.fill(202,218,255);p.textAlign(p.CENTER,p.CENTER);p.textSize(15);p.text(lbl,CW/2,CH-25);}
     if(G.phase==='TIEBREAK'&&G.tb)drawTiebreak();
@@ -1059,16 +1112,16 @@ new p5(p => {
   // ══════════════════════════════════════════
   p.setup=function(){
     p.createCanvas(CW,CH).parent('gc');p.pixelDensity(1);
-    // Load character images from assets folder
     const charPaths=['character_elder','character_stella','character_shadow','character_noir'];
     charPaths.forEach((name,i)=>{
       p.loadImage('./assets/'+name+'.png',
         img=>{ charImgs[i]=img; },
-        ()=>{ charImgs[i]=null; } // graceful fallback if missing
+        ()=>{ charImgs[i]=null; }
       );
     });
   };
   p.draw=function(){
+    if(scene==='GAME')updateGame();   // ゲームロジック更新（描画より先に実行）
     if(scene==='TITLE')drawTitle();
     else if(scene==='CONFIG')drawConfig();
     else if(scene==='GAME')drawGame();
@@ -1087,7 +1140,6 @@ new p5(p => {
     if(!dragS)return;dragE={x:p.mouseX,y:p.mouseY};const dx=dragE.x-dragS.x,dy=dragE.y-dragS.y;if(Math.sqrt(dx*dx+dy*dy)>14)isDragging=true;
   };
   p.mouseReleased=function(){
-    // Help overlay
     if(helpOpen){
       const bx=CW/2-440,by=CH/2-275,bh=550,cbx=CW/2-58,cby=by+bh-44;
       if(hov(cbx,cby,116,34)){helpOpen=false;return;}
@@ -1096,9 +1148,7 @@ new p5(p => {
       if(!hov(bx,by,880,bh)){helpOpen=false;return;}
       return;
     }
-    // Help button
     if(hov(HELP_BTN.x,HELP_BTN.y,HELP_BTN.w,HELP_BTN.h)&&scene!=='TITLE'){helpOpen=true;return;}
-    // Unified back button
     if(hov(BACK_BTN.x,BACK_BTN.y,BACK_BTN.w,BACK_BTN.h)&&scene!=='TITLE'){
       if(scene==='CONFIG'){EGG.reset();scene='TITLE';return;}
       if(scene==='GAME'){scene='CONFIG';return;}
@@ -1111,23 +1161,25 @@ new p5(p => {
       if(hov(CW/2-140,CH-118,280,54)){scene='CONFIG';return;}return;
     }
     if(scene==='CONFIG'){
-      // AI char selection (2x2 grid)
       const cbw=136,cbh=54,cgap=12,csx=CFG_RX+(CFG_RW-2*cbw-cgap)/2;
       for(let i=0;i<4;i++){const row=Math.floor(i/2),col=i%2;const bx=csx+col*(cbw+cgap),by=82+row*(cbh+cgap);if(hov(bx,by,cbw,cbh)){CFG.aiChar=i;return;}}
-      // Left panel settings
-      const bwL=Math.floor((CFG_LW-10*(TURN_OPTIONS.length-1))/TURN_OPTIONS.length);
+      const bwL=cfgRowBtnW(TURN_OPTIONS);
       TURN_OPTIONS.forEach((v,i)=>{if(hov(CFG_LX+i*(bwL+10),100,bwL,36))CFG.turns=v;});
       const midX=CFG_LX+CFG_LW/2;
       if(hov(midX-80,190,46,36))CFG.pDice=clamp(CFG.pDice-1,1,10);if(hov(midX+34,190,46,36))CFG.pDice=clamp(CFG.pDice+1,1,10);
       if(hov(midX-80,264,46,36))CFG.aDice=clamp(CFG.aDice-1,1,10);if(hov(midX+34,264,46,36))CFG.aDice=clamp(CFG.aDice+1,1,10);
-      const bwC=Math.floor((CFG_LW-10*(CARD_OPTIONS.length-1))/CARD_OPTIONS.length);
+      const bwC=cfgRowBtnW(CARD_OPTIONS);
       CARD_OPTIONS.forEach((v,i)=>{if(hov(CFG_LX+i*(bwC+10),340,bwC,36))CFG.marketCards=v;});
       const bwK=Math.floor((CFG_LW-10*3)/4);
       [0,1,2,3].forEach(i=>{if(hov(CFG_LX+i*(bwK+10),418,bwK,36))CFG.keepLimit=i;});
       if(hov(CFG_LX,612,CFG_LW,50)){initGame();scene='GAME';}
       return;
     }
-    if(scene==='RESULT'){return;}
+    if(scene==='RESULT'){
+      // もう一度プレイ → CONFIG に戻る（設定を変えてリトライ可能）
+      if(hov(CW/2-118,CH/2+112,236,52)){EGG.reset();scene='CONFIG';return;}
+      return;
+    }
     if(isDragging&&scene==='GAME'&&G.phase==='ASSIGN'&&dragS&&dragE){
       const x1=Math.min(dragS.x,dragE.x),x2=Math.max(dragS.x,dragE.x),y1=Math.min(dragS.y,dragE.y),y2=Math.max(dragS.y,dragE.y);
       const aU=G.pDice.filter(d=>d.card===null),kD=aU.filter(d=>!d.fresh),fD=aU.filter(d=>d.fresh);
@@ -1141,14 +1193,12 @@ new p5(p => {
     if(G.phase==='EFFECT_ANIM'){G.effectAnimTimer=0;return;}
     if(G.phase==='TIEBREAK'&&G.tb&&G.tb.showBtn){const bx=CW/2-92,by=CH/2+86;if(hov(bx,by,184,40)){if(G.tb.res==='again')startTiebreak(G.tb.slot);else onTbDone(G.tb.res);}return;}
 
-    // SWAP_SELECT
     if(G.phase==='SWAP_SELECT'){
       const aU=G.pDice.filter(d=>d.card===null),kD=aU.filter(d=>!d.fresh),fD=aU.filter(d=>d.fresh);
       const lay=pDiceLayout(fD,kD);
       for(let pi2=0;pi2<lay.positions.length;pi2++){
         const pos=lay.positions[pi2],d=pi2<lay.kC?kD[pi2]:fD[pi2-lay.kC];
         if(d&&hov(pos.x,pos.y,DS,DS)){
-          // Pass position so floating text appears at die location
           executePlayerSwap(G.pDice.indexOf(d),pos.x+DS/2,pos.y);
           return;
         }
