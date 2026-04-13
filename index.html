@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ダイスオークション | Dice Auction v0.40c</title>
+<title>ダイスオークション | Dice Auction v0.40d</title>
 
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-EZQPZTQ7P4"></script>
@@ -104,7 +104,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.40c',
+      gameTitle: 'ダイスオークション', version: 'v0.40d',
 
       // ── Title screen ──
       titleSummary: [
@@ -116,7 +116,7 @@ new p5(p => {
 
       // ── Help ──
       helpTitle: 'ヘルプ', helpClose: '閉じる',
-      helpTabs: ['ゲームルール', '特殊カード', 'AIキャラクター'],
+      helpTabs: ['ゲームルール', 'EXカード', 'ドラフト効果', 'NPCスキル', 'アイテム・AI'],
       helpRulesTitle: 'ゲームルール',
       rulesList: [
         '両者ともダイス3個からスタート（設定で変更可）',
@@ -170,7 +170,7 @@ new p5(p => {
         '相手のダイスを直接崩す干渉者。気まぐれな一手が勝敗を決める。',
       ],
       npcInitPt: ['初期ドラフトpt: 12', '初期ドラフトpt: 11', '初期ドラフトpt: 10', '初期ドラフトpt: 9'],
-      npcSkillNote: '（スキルはv0.3.3で実装予定）',
+      npcSkillNote: '',
       aiNpcChosen: name => `AIのパートナー：${name}`,
 
       // ── Game ──
@@ -357,7 +357,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.40c',
+      gameTitle: 'Dice Auction', version: 'v0.40d',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -365,7 +365,7 @@ new p5(p => {
       ],
       startBtn: 'Start Game', backBtn: '← Back',
       helpTitle: 'Help', helpClose: 'Close',
-      helpTabs: ['Game Rules', 'Special Cards', 'AI Characters'],
+      helpTabs: ['Game Rules', 'EX Cards', 'Draft Effects', 'NPC Skills', 'Items & AI'],
       helpRulesTitle: 'How to Play',
       rulesList: [
         'Both players start with 3 dice (adjustable in Settings)',
@@ -415,7 +415,7 @@ new p5(p => {
         'A disruptive interference expert. One random move can decide the match.',
       ],
       npcInitPt: ['Initial Draft pt: 12', 'Initial Draft pt: 11', 'Initial Draft pt: 10', 'Initial Draft pt: 9'],
-      npcSkillNote: '(Skills planned for v0.3.3)',
+      npcSkillNote: '',
       aiNpcChosen: name => `AI Partner: ${name}`,
       you: 'You', opp: 'Opp.', turnLabel: 'Turn',
       dicePerTurn: n => `Dice ${n}/turn`,
@@ -2216,71 +2216,219 @@ new p5(p => {
 
   // ── Help overlay ──
   function drawHelp() {
-    p.noStroke(); p.fill(0, 0, 0, 175); p.rect(0, 0, CW, CH);
-    const bx = CW / 2 - 440, by = CH / 2 - 275, bw = 880, bh = 550;
-    p.fill(14, 18, 32); p.stroke(62, 88, 145); p.strokeWeight(2); p.rect(bx, by, bw, bh, 14); p.noStroke();
-    p.textFont('Mochiy Pop One, sans-serif'); p.fill(52, 192, 108); p.textAlign(p.CENTER, p.TOP); p.textSize(20); p.text(L.helpTitle, CW / 2, by + 14); p.textFont('sans-serif');
-    p.fill(38, 52, 90); p.rect(bx + 8, by + 44, bw - 16, 2);
-    const sbw = 162, sbx = bx + 8, cty = by + 52;
-    L.helpTabs.forEach((tab, i) => {
-      const ty = cty + i * 44, sel = helpTab === i;
-      p.fill(sel ? [32, 62, 48] : [18, 26, 48]); p.stroke(sel ? [52, 155, 85] : [40, 55, 90]); p.strokeWeight(sel ? 2 : 1); p.rect(sbx, ty, sbw, 38, 6); p.noStroke();
-      p.fill(sel ? [68, 215, 128] : [125, 138, 175]); p.textAlign(p.LEFT, p.CENTER); p.textSize(13); p.text((sel ? '▶ ' : ' ∙ ') + tab, sbx + 10, ty + 19);
+    p.noStroke(); p.fill(0,0,0,180); p.rect(0,0,CW,CH);
+    const bx=CW/2-455, by=CH/2-295, bw=910, bh=590;
+    p.fill(14,18,32); p.stroke(62,88,145); p.strokeWeight(2); p.rect(bx,by,bw,bh,14); p.noStroke();
+    p.textFont('Mochiy Pop One, sans-serif'); p.fill(52,192,108); p.textAlign(p.CENTER,p.TOP); p.textSize(22); p.text(L.helpTitle,CW/2,by+14); p.textFont('sans-serif');
+    p.fill(38,52,90); p.rect(bx+8,by+48,bw-16,2);
+    const sbw=175,sbx=bx+8,cty=by+55;
+    L.helpTabs.forEach((tab,i)=>{
+      const ty=cty+i*46,sel=helpTab===i;
+      p.fill(sel?[32,62,48]:[18,26,48]); p.stroke(sel?[52,155,85]:[40,55,90]); p.strokeWeight(sel?2:1); p.rect(sbx,ty,sbw,40,6); p.noStroke();
+      p.fill(sel?[68,215,128]:[125,138,175]); p.textAlign(p.LEFT,p.CENTER); p.textSize(13); p.text((sel?'▶ ':' ∙ ')+tab,sbx+10,ty+20);
     });
-    p.fill(38, 52, 90); p.rect(bx + sbw + 14, by + 50, 2, bh - 58);
-    const cx = bx + sbw + 22, cy2 = by + 52, cw2 = bw - sbw - 30;
+    p.fill(38,52,90); p.rect(bx+sbw+14,by+52,2,bh-60);
+    const cx=bx+sbw+22, cy2=by+55, cw2=bw-sbw-30;
     p.noStroke();
-    switch (helpTab) {
-      case 0: {
-        p.fill(65, 185, 110); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(L.helpRulesTitle, cx, cy2 + 4);
-        p.fill(42, 60, 90); p.rect(cx, cy2 + 24, cw2 - 10, 2);
-        p.fill(188, 198, 222); p.textSize(13);
-        L.rulesList.forEach((line, i) => { p.text((line.startsWith(' ') ? '' : ' • ') + line, cx + 4, cy2 + 32 + i * 26); });
-        break;
-      }
-      case 1: {
-        p.fill(178, 120, 218); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(L.helpSpecialTitle, cx, cy2 + 4);
-        p.fill(60, 38, 90); p.rect(cx, cy2 + 24, cw2 - 10, 2);
-        ['SWAP_DIE','BOOST_DICE','OPPONENT_MINUS','SELF_MULTIPLY','WEAKEN_OPPONENT'].forEach((t, i) => {
-          const sy = cy2 + 32 + i * 82;
-          p.fill(22, 14, 38); p.rect(cx, sy, cw2 - 10, 76, 8);
-          p.fill(228, 198, 255); p.textAlign(p.LEFT, p.TOP); p.textSize(14); p.text(L.specialNames[t] || t, cx + 10, sy + 8);
-          const isNext = ['SWAP_DIE','BOOST_DICE','WEAKEN_OPPONENT'].includes(t);
-          p.fill(isNext ? [58, 108, 195] : [195, 108, 58]); p.rect(cx + cw2 - 80, sy + 6, 70, 20, 10);
-          p.fill(220, 230, 255); p.textAlign(p.CENTER, p.CENTER); p.textSize(10);
-          p.text(isNext ? (lang === 'ja' ? '次ターン' : 'Next turn') : (lang === 'ja' ? '即時' : 'Instant'), cx + cw2 - 45, sy + 16);
-          p.fill(165, 138, 198); p.textAlign(p.LEFT, p.TOP); p.textSize(12); p.text(L.specialDescs[t] || '', cx + 10, sy + 30, cw2 - 90, 40);
+    const isJa = lang==='ja';
+
+    // ── ヘルパー ──
+    function hSection(title,y,col){ p.fill(...col); p.textFont('Mochiy Pop One, sans-serif'); p.textAlign(p.LEFT,p.TOP); p.textSize(15); p.text(title,cx,y); p.textFont('sans-serif'); p.fill(col[0],col[1],col[2],120); p.rect(cx,y+20,cw2-10,2); }
+    function hRow(icon,label,desc,y,cy){ p.fill(22,30,52); p.rect(cx,y,cw2-10,cy,8); p.fill(205,215,245); p.textAlign(p.LEFT,p.TOP); p.textSize(14); p.text(icon+' '+label,cx+10,y+7); p.fill(158,170,208); p.textSize(12); p.text(desc,cx+10,y+27,cw2-30,cy-32); }
+
+    switch(helpTab){
+      case 0:{ // ゲームルール
+        const ja=isJa;
+        hSection(ja?'🎯 目的':'🎯 Objective',cy2,[65,185,110]);
+        p.fill(185,200,235); p.textAlign(p.LEFT,p.TOP); p.textSize(14);
+        p.text(ja?'複数ステージのダイスオークションで相手より多くのステージを勝ち取れ！\n先に過半数を取った方がラン勝利（3ステなら2先、5ステなら3先）。':'Win more stages than your opponent in dice auctions!\nFirst to win majority of stages wins the run.',cx,cy2+28,cw2-10,50);
+
+        hSection(ja?'🔄 1ターンの流れ':'🔄 Turn Flow',cy2+90,[58,120,195]);
+        const steps=ja?['①  ダイスをロール（毎ターン振り直し）','②  カードへ割り当て（相手には非公開）','③  同時公開 → 合計値が高い方がカードを獲得','④  未割当ダイスはキープ（個数は見える・値は秘密）']:
+                       ['①  Roll dice (fresh each turn)','②  Secretly assign dice to cards','③  Reveal simultaneously — higher total wins','④  Unassigned dice are kept (count visible, values hidden)'];
+        steps.forEach((s,i)=>{ p.fill(172,185,225); p.textAlign(p.LEFT,p.TOP); p.textSize(14); p.text(s,cx+8,cy2+118+i*30,cw2-20,28); });
+
+        hSection(ja?'🃏 カードの種類':'🃏 Card Types',cy2+255,[195,125,55]);
+        const ct=ja?[['緑 収益','毎ターン得点を継続加算。序盤に取ると効率的。','52,192,108'],['青 投資','ダイスを+1個/ターン増やす。複数取れると強力。','58,120,195'],['金 即時','獲得時に一度だけ得点を加算。終盤の逆転に有効。','215,178,50']]:
+                    [['Green Income','Adds points every turn. Efficient when taken early.','52,192,108'],['Blue Invest','Adds +1 die/turn. Strong with multiple copies.','58,120,195'],['Gold Instant','Adds points once on acquisition. Good for comebacks.','215,178,50']];
+        ct.forEach(([n,d,col],i)=>{
+          const col3=col.split(',').map(Number);
+          const rx=cx+i*(cw2-10)/3, rw=(cw2-10)/3-6;
+          p.fill(18,24,44); p.stroke(...col3); p.strokeWeight(1.5); p.rect(rx,cy2+283,rw,75,8); p.noStroke();
+          p.fill(...col3); p.textAlign(p.LEFT,p.TOP); p.textSize(13); p.text(n,rx+8,cy2+291);
+          p.fill(165,178,215); p.textSize(11); p.text(d,rx+8,cy2+310,rw-16,40);
         });
         break;
       }
-      case 2: {
-        p.fill(175, 185, 218); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(L.helpAITitle, cx, cy2 + 4);
-        p.fill(42, 52, 90); p.rect(cx, cy2 + 24, cw2 - 10, 2);
-        L.aiCharNames.forEach((name, i) => {
-          const sy = cy2 + 32 + i * 116;
-          p.fill(20, 26, 46); p.rect(cx, sy, cw2 - 10, 110, 8);
-          if (charImgs[i]) { p.imageMode(p.CORNER); p.image(charImgs[i], cx + 8, sy + 6, 45, 80); }
-          else { p.fill(35, 30, 55); p.rect(cx + 8, sy + 6, 45, 80, 4); p.fill(128, 100, 180); p.textAlign(p.CENTER, p.CENTER); p.textSize(10); p.text(L.aiTBD, cx + 30, sy + 46); }
-          p.fill(205, 215, 245); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(name, cx + 62, sy + 12);
-          p.fill(L.aiCharFaces[i] === '(*_*)' ? [168, 88, 218] : L.aiCharFaces[i] === '(>_<)' ? [218, 128, 68] : [125, 138, 175]);
-          p.textSize(18); p.text(L.aiCharFaces[i], cx + 62, sy + 32);
-          p.fill(155, 165, 200); p.textSize(11.5); p.text(L.aiHelpDescs[i], cx + 10, sy + 58, cw2 - 20, 46);
+      case 1:{ // EXカード
+        hSection(isJa?'⭐ EXカード（特殊カード）':'⭐ EX Cards (Special)',cy2,[178,120,218]);
+        p.fill(158,168,208); p.textAlign(p.LEFT,p.TOP); p.textSize(13);
+        p.text(isJa?'毎ターン1枚ランダムで出現する特殊枠カード。通常カードとは別に入札します。':'One appears randomly each turn as a special slot. Bid separately from regular cards.',cx,cy2+28,cw2-10,30);
+        const exCards=isJa?[
+          ['ダイス交換','次ターン開始時、自分と相手のダイスを1個ずつ交換する','次ターン'],
+          ['ダイス強化','次ターン自分のダイスを2個選んで強制的に6にする','次ターン'],
+          ['相手マイナス','相手の得点を-10する（即時）','即時'],
+          ['自己増倍','このターン終了後、自分の得点を×1.2する','即時'],
+          ['相手弱体化','次ターン相手のダイスを2個選んで強制的に1にする','次ターン'],
+        ]:[
+          ['Swap Die','Swap 1 die with opponent at start of next turn','Next'],
+          ['Boost Dice','Force 2 of your dice to 6 next turn','Next'],
+          ['Opponent -10','Reduce opponent score by 10 immediately','Now'],
+          ['Self ×1.2','Multiply your score by 1.2 after this turn','Now'],
+          ['Weaken Opp','Force 2 opponent dice to 1 next turn','Next'],
+        ];
+        exCards.forEach(([name,desc,timing],i)=>{
+          const ey=cy2+70+i*84;
+          const isNext=i===0||i===1||i===4;
+          p.fill(22,14,42); p.stroke(148,80,218); p.strokeWeight(1.5); p.rect(cx,ey,cw2-10,78,8); p.noStroke();
+          p.fill(isNext?[58,108,210]:[195,120,58]); p.rect(cx+cw2-90,ey+8,80,22,10);
+          p.fill(220,230,255); p.textAlign(p.CENTER,p.CENTER); p.textSize(11); p.text(timing,cx+cw2-50,ey+19);
+          p.fill(220,198,255); p.textAlign(p.LEFT,p.TOP); p.textSize(15); p.text(name,cx+12,ey+8);
+          p.fill(168,150,205); p.textSize(13); p.text(desc,cx+12,ey+34,cw2-110,38);
+        });
+        break;
+      }
+      case 2:{ // ドラフト効果
+        hSection(isJa?'♦ 特別カード変化効果（ドラフトで獲得）':'♦ Draft Card Effects',cy2,[178,148,228]);
+        p.fill(158,168,208); p.textAlign(p.LEFT,p.TOP); p.textSize(13);
+        p.text(isJa?'ドラフトで競り落とした特別カードは通常カードに変化効果が付きます。':'Special cards won in draft have extra effects on top of their base type.',cx,cy2+28,cw2-10,30);
+        const fx=isJa?[
+          ['◆ 配置時ダイス+1','そのターン自分のカードが場に出た時、ダイスが1個追加される'],
+          ['◆ 同点→勝利','割り当て合計が同値の場合、カードのオーナー側が勝利する'],
+          ['◆ 目標値（大）','割り当て合計が目標値（10〜18）に最も近い方が勝利する'],
+          ['◆ 目標値（小）','割り当て合計が目標値（3〜7）に最も近い方が勝利する'],
+          ['◆ 相手数公開','割り当てフェーズ中、相手がこのカードに割当した個数がリアルタイムで見える'],
+          ['◆ 獲得時+20pt','このカードを自分が獲得したとき、即座に+20ptを得る'],
+          ['◆ 獲得時相手-15pt','このカードを自分が獲得したとき、相手の得点を-15する'],
+        ]:[
+          ['◆ +1 Die on Play','Adds 1 die when your card enters the field this turn'],
+          ['◆ Tie → Owner Wins','Card owner wins when totals are equal'],
+          ['◆ Target High','Closest total to target (10-18) wins'],
+          ['◆ Target Low','Closest total to target (3-7) wins'],
+          ['◆ Reveal Count','See how many dice opponent assigns to this card in real time'],
+          ['◆ +20pt on Win','Immediately earn +20pt when you win this card'],
+          ['◆ Opp -15pt on Win','Reduce opponent score by 15 when you win this card'],
+        ];
+        const cols2=2, rh=62, rw2=(cw2-16)/2;
+        fx.forEach(([name,desc],i)=>{
+          const col=i%cols2, row=Math.floor(i/cols2);
+          const rx=cx+col*(rw2+8), ry=cy2+70+row*(rh+6);
+          p.fill(20,26,46); p.stroke(90,68,148); p.strokeWeight(1); p.rect(rx,ry,rw2,rh,6); p.noStroke();
+          p.fill(195,165,245); p.textAlign(p.LEFT,p.TOP); p.textSize(13); p.text(name,rx+8,ry+7);
+          p.fill(148,138,195); p.textSize(11); p.text(desc,rx+8,ry+26,rw2-16,32);
+        });
+        break;
+      }
+      case 3:{ // NPCスキル
+        hSection(isJa?'🧙 NPCスキル（協力者）':'🧙 NPC Skills (Partner)',cy2,[78,178,148]);
+        p.fill(158,168,208); p.textAlign(p.LEFT,p.TOP); p.textSize(13);
+        p.text(isJa?'ゲーム開始前に1体選択。スキルは毎ステージリセット。pt消費スキルは強化スキル。':'Choose 1 before game. Skills reset each stage. Cost skills are enhanced skills.',cx,cy2+28,cw2-10,30);
+        const npcData=isJa?[
+          ['茶々（たぬき）','賭け宣言','指定カード: 勝利時×1.5 / 負け時=0 ／ 3回',
+                            '大博打','賭け宣言中に使用: 勝利時×2 ／ 12pt消費'],
+          ['扇灯（フェネック）','ランタンの灯り','デッキポップで相手の未使用カード名が常時確認可能 ／ 常時',
+                               '見通す目','相手ダイスの高低(3↓/4↑)を開示 ／ 3回',
+                               '割り当て透視','相手の全割り当てを公開 ／ 20pt消費'],
+          ['福夜（フクロウ）','タイブレーク確定','指定カードを強制タイブレークに ／ 2回',
+                             'タイブレーク+1','タイブレーク発生時4対3で実施 ／ 3回',
+                             'D20の一手','指定カードにD20(1-20)を即時割り当て ／ 15pt消費'],
+          ['奈々（黒猫）','ダイス交換','自分と相手のダイスを1個交換 ／ 3回',
+                         '出目の反転','ダイス1個の出目を反転(6→1) ／ 2回',
+                         '気まぐれ再ロール','キープ以外全ダイスを振り直し ／ 5pt消費'],
+        ]:[
+          ['Chacha (Tanuki)','Bold Bet','Pick card: win×1.5 / lose=0 ／ 3/stage',
+                             'All-In','With Bold Bet: win×2 ／ 12pt'],
+          ['Sento (Fennec)','Lantern Light','Always see opp unused card names in deck popup ／ passive',
+                            'Piercing Eyes','Reveal opp dice high/low (≤3/≥4) ／ 3/stage',
+                            'Assign Vision','See all opp assignments after they confirm ／ 20pt'],
+          ['Fukuya (Owl)','Tie Lock','Force 1 card to tiebreak ／ 2/stage',
+                          'Tie Boost','Tiebreak becomes 4 vs 3 ／ 3/stage',
+                          'D20 Gambit','Assign D20(1-20) to 1 card instantly ／ 15pt'],
+          ['Nana (Cat)','Swap','Exchange 1 die with opponent ／ 3/stage',
+                        'Reverse','Flip 1 die (6→1, 5→2…) ／ 2/stage',
+                        'Wild Reroll','Reroll all non-kept dice ／ 5pt'],
+        ];
+        const ncolors=[[52,192,128],[78,148,218],[108,148,228],[178,148,228]];
+        npcData.forEach(([name,...skills],ni)=>{
+          const ny=cy2+68+ni*118, col3=ncolors[ni];
+          p.fill(16,22,42); p.stroke(...col3); p.strokeWeight(1.5); p.rect(cx,ny,cw2-10,112,8); p.noStroke();
+          p.fill(...col3); p.textFont('Mochiy Pop One, sans-serif'); p.textAlign(p.LEFT,p.TOP); p.textSize(13); p.text(name,cx+10,ny+6); p.textFont('sans-serif');
+          for(let si=0;si<skills.length;si+=2){
+            const sname=skills[si], sdesc=skills[si+1];
+            const sy=ny+28+Math.floor(si/2)*26;
+            p.fill(145,155,195); p.textAlign(p.LEFT,p.TOP); p.textSize(12);
+            p.fill(195,205,238); p.text('• '+sname+': ',cx+12,sy);
+            const nw=p.textWidth('• '+sname+': ');
+            p.fill(145,158,198); p.text(sdesc,cx+12+nw,sy,cw2-nw-30,24);
+          }
+        });
+        break;
+      }
+      case 4:{ // アイテム・AI
+        const lhalf=cw2/2-8, rhalf=cw2/2-4;
+        // 左: アイテム
+        hSection(isJa?'🎒 アイテム（7種）':'🎒 Items (7 types)',cy2,[195,148,78]);
+        const items=isJa?[
+          ['出目底上げ','次ターン新ダイスの出目下限+1'],['六の目','ダイス1個を6に変更'],['臨時ダイス','このターンダイス+1個'],
+          ['索敵','相手ダイスの高低(3↓/4↑)を開示'],['封鎖','指定カードに相手1個のみ割当'],
+          ['封印','指定カードの効果を0にする'],['強化','指定カードの効果を2倍にする'],
+        ]:[
+          ['Floor Up','Next turn new dice min +1'],['Six Eye','Set 1 die to 6'],['Temp Die','+1 die this turn'],
+          ['Scout','Reveal opp dice high/low'],['Blockade','Opp can assign only 1 die to target'],
+          ['Seal','Set target card effect to 0'],['Enhance','Double target card effect'],
+        ];
+        items.forEach(([name,desc],i)=>{
+          const iy=cy2+30+i*62;
+          p.fill(18,24,44); p.stroke(148,118,58); p.strokeWeight(1); p.rect(cx,iy,lhalf,56,6); p.noStroke();
+          p.fill(218,185,100); p.textAlign(p.LEFT,p.TOP); p.textSize(13); p.text(name,cx+8,iy+6);
+          p.fill(168,155,125); p.textSize(12); p.text(desc,cx+8,iy+26,lhalf-16,28);
+        });
+        // 右: AIキャラクター
+        const rx2=cx+lhalf+14;
+        hSection(isJa?'🤖 AIキャラクター':'🤖 AI Characters',cy2,[148,165,218]);
+        const aiDesc=isJa?[
+          ['エルダー','balanced','各カードを評価比例で配分。バランスが取れており予測しやすい。'],
+          ['ステラ','allin','最高評価カード1枚にダイスを全投入。読まれやすいが破壊力がある。'],
+          ['シャドウ','twofocus','上位2枚に集中し残りに最小限のみ。堅実な二択戦術。'],
+          ['ノワール','adaptive','スコア差や残りターンで戦略を変化。終盤は逆転を狙う。'],
+        ]:[
+          ['Elder','balanced','Distributes dice proportionally. Balanced and predictable.'],
+          ['Stella','allin','All dice into the top-rated card. High risk, high reward.'],
+          ['Shadow','twofocus','Focus on top 2 cards, minimal elsewhere. Steady tactics.'],
+          ['Noir','adaptive','Changes strategy by score gap. Goes for instant cards late game.'],
+        ];
+        const styleCol={'balanced':[65,155,90],'allin':[195,80,80],'twofocus':[80,120,195],'adaptive':[155,80,195]};
+        aiDesc.forEach(([name,style,desc],i)=>{
+          const ay=cy2+30+i*118;
+          p.fill(18,24,46); p.stroke(88,105,165); p.strokeWeight(1); p.rect(rx2,ay,rhalf,112,8); p.noStroke();
+          // キャラ画像
+          if(charImgs[i]){
+            p.push(); const dc2=p.drawingContext; dc2.save(); dc2.beginPath(); dc2.rect(rx2+6,ay+6,50,100); dc2.clip();
+            p.imageMode(p.CORNER); const sc2=50/charImgs[i].width; p.image(charImgs[i],rx2+6,ay+6,50,charImgs[i].height*sc2);
+            dc2.restore(); p.pop();
+          }
+          const tx=rx2+62;
+          p.fill(210,218,245); p.textFont('Mochiy Pop One, sans-serif'); p.textAlign(p.LEFT,p.TOP); p.textSize(14); p.text(name,tx,ay+8); p.textFont('sans-serif');
+          const sc3=styleCol[style]||[150,150,150];
+          p.fill(...sc3); p.textSize(10); p.rect(tx,ay+30,rhalf-66,18,8); p.noStroke();
+          p.fill(255); p.textAlign(p.CENTER,p.CENTER); p.textSize(10); p.text(style,tx+(rhalf-66)/2,ay+39);
+          p.fill(148,158,200); p.textAlign(p.LEFT,p.TOP); p.textSize(12); p.text(desc,tx,ay+56,rhalf-70,52);
         });
         break;
       }
     }
-    const cbx = CW / 2 - 58, cby = by + bh - 44;
-    const hC = hov(cbx, cby, 116, 34);
-    p.fill(hC ? [55, 95, 165] : [38, 68, 128]); p.rect(cbx, cby, 116, 34, 9);
-    p.fill(195, 215, 255); p.textAlign(p.CENTER, p.CENTER); p.textSize(14); p.text(L.helpClose, CW / 2, cby + 17);
+    const cbx=CW/2-58, cby=by+bh-48;
+    const hC=hov(cbx,cby,116,36);
+    p.fill(hC?[55,95,165]:[38,68,128]); p.rect(cbx,cby,116,36,9);
+    p.fill(195,215,255); p.textAlign(p.CENTER,p.CENTER); p.textSize(14); p.text(L.helpClose,CW/2,cby+18);
   }
 
   // ── TITLE scene ──
   function drawTitle() {
     EGG.update();
     drawSceneBg('bg_title', 0.40);
-    const hS = hov(CW / 2 - 140, CH - 118, 280, 54);
-    p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 140, CH - 118, 280, 54, 10);
+    const hS = hov(CW / 2 - 150, CH - 112, 300, 56);
+    p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 150, CH - 112, 300, 56, 10);
     if (!EGG.words.length) {
       p.textFont('Mochiy Pop One, sans-serif'); p.textSize(14);
       [{ k: 'ja', label: '日本語' }, { k: 'en', label: 'English' }].forEach((lv, i) => {
@@ -2290,8 +2438,8 @@ new p5(p => {
       });
       p.fill(52, 192, 108); p.textAlign(p.CENTER, p.CENTER); p.textSize(64); p.text(L.gameTitle, CW / 2, 160);
       p.textFont('sans-serif'); p.fill(165, 175, 210); p.textSize(16);
-      L.titleSummary.forEach((line, i) => p.text(line, CW / 2, 250 + i * 32));
-      p.textFont('Mochiy Pop One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(22); p.text(L.startBtn, CW / 2, CH - 91);
+      L.titleSummary.forEach((line, i) => p.text(line, CW / 2, 455 + i * 28));
+      p.textFont('Mochiy Pop One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(22); p.text(L.startBtn, CW / 2, CH - 86);
       p.textFont('sans-serif'); p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
     } else {
       [{ k: 'ja', x: 16, w: 66 }, { k: 'en', x: 16, w: 64 }].forEach((lv, i) => { if (lang === lv.k) { p.noStroke(); p.fill(215, 178, 48); p.rect(lv.x, 32 + i * 28, lv.w, 2); } });
@@ -2320,9 +2468,9 @@ new p5(p => {
       p.stroke(sel ? [52, 155, 85] : hB ? [68, 100, 148] : [52, 66, 100]);
       p.strokeWeight(sel ? 2 : 1.5); p.rect(bx, by, cbw, cbh, 8); p.noStroke();
       p.fill(sel ? [215, 248, 218] : hB ? [190, 205, 238] : [165, 175, 210]);
-      p.textAlign(p.CENTER, p.CENTER); p.textSize(15); p.text(L.aiCharFaces[i], bx + cbw / 2, by + 16);
-      p.fill(sel ? [185, 248, 198] : hB ? [175, 188, 220] : [145, 155, 192]);
-      p.textSize(13); p.text(L.aiCharNames[i], bx + cbw / 2, by + 34);
+      p.textAlign(p.CENTER, p.CENTER);
+      p.fill(sel ? [215, 248, 218] : hB ? [190, 205, 238] : [165, 175, 210]);
+      p.textSize(15); p.text(L.aiCharNames[i], bx + cbw / 2, by + 27);
     }
 
     // Portrait
@@ -2465,7 +2613,7 @@ new p5(p => {
 
       // Skill note
       p.fill(80, 95, 138); p.textSize(9);
-      p.text(L.npcSkillNote, cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 14);
+
     }
 
     // Confirm button
@@ -2733,9 +2881,11 @@ new p5(p => {
       p.push();
       const dc = p.drawingContext;
       dc.save(); dc.beginPath(); dc.rect(2, 1, PORT_W - 4, PORT_H - 2); dc.clip();
-      const srcH = img.height * 0.55, dw = PORT_W - 4, dh = Math.round(srcH * (dw / img.width));
-      const dy = Math.max(1, Math.round((PORT_H - dh) / 2));
-      p.imageMode(p.CORNER); p.image(img, 2, dy, dw, dh, 0, 0, img.width, srcH);
+      // フレーム幅を埋めるようにスケール → 顔/上半身が見える
+      const dw = PORT_W - 4;
+      const scale = dw / img.width;
+      const dh = img.height * scale;
+      p.imageMode(p.CORNER); p.image(img, 2, 2, dw, dh);
       dc.restore(); p.pop();
       for (let i = 0; i < 24; i++) { p.fill(14, 18, 32, i * 8); p.rect(0, PORT_H - 24 + i, PORT_W, 1); }
       p.fill(0, 0, 0, 40); p.rect(0, 0, PORT_W, PORT_H);
@@ -3831,7 +3981,7 @@ new p5(p => {
       if (EGG.onRelease(p.mouseX, p.mouseY)) return; if (EGG.heldIdx >= 0) return;
       if (hov(14, 8, 80, 26)) { setLang('ja'); return; }
       if (hov(14, 36, 80, 26)) { setLang('en'); return; }
-      if (hov(CW / 2 - 140, CH - 118, 280, 54)) { scene = 'CONFIG'; return; }
+      if (hov(CW / 2 - 150, CH - 112, 300, 56)) { scene = 'CONFIG'; return; }
       return;
     }
 
