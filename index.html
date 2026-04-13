@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ダイスオークション | Dice Auction</title>
+<title>ダイスオークション | Dice Auction v0.40c</title>
 
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-EZQPZTQ7P4"></script>
@@ -104,7 +104,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.40',
+      gameTitle: 'ダイスオークション', version: 'v0.40c',
 
       // ── Title screen ──
       titleSummary: [
@@ -357,7 +357,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.40',
+      gameTitle: 'Dice Auction', version: 'v0.40c',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -2125,11 +2125,16 @@ new p5(p => {
   function drawSceneBg(bgKey, darken) {
     if (bgLoaded[bgKey] && bgImgs[bgKey]) {
       const img = bgImgs[bgKey];
+      // imageMode を CORNER に強制（CENTER が設定されたままでもズレない）
+      p.push();
+      p.imageMode(p.CORNER);
       const scale = Math.max(CW / img.width, CH / img.height);
       const iw = img.width * scale, ih = img.height * scale;
       const ix = (CW - iw) / 2, iy = (CH - ih) / 2;
       p.image(img, ix, iy, iw, ih);
-      const d = darken !== undefined ? darken : 0.55;
+      p.pop();
+      // 暗幕オーバーレイ（デフォルト0.40で背景が見える明るさ）
+      const d = darken !== undefined ? darken : 0.40;
       p.noStroke(); p.fill(0, 0, 0, Math.round(255 * d)); p.rect(0, 0, CW, CH);
     } else {
       p.background(8, 11, 20);
@@ -2139,6 +2144,7 @@ new p5(p => {
       p.noStroke();
     }
   }
+
 
   function drawMultilineText(txt, cx, startY, lineH) {
     const lines = (txt||'').split('\n');
@@ -2272,7 +2278,7 @@ new p5(p => {
   // ── TITLE scene ──
   function drawTitle() {
     EGG.update();
-    drawSceneBg('bg_title', 0.45);
+    drawSceneBg('bg_title', 0.40);
     const hS = hov(CW / 2 - 140, CH - 118, 280, 54);
     p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 140, CH - 118, 280, 54, 10);
     if (!EGG.words.length) {
@@ -2295,7 +2301,7 @@ new p5(p => {
 
   // ── CONFIG scene ──
   function drawConfig() {
-    drawSceneBg('bg_config');
+    drawSceneBg('bg_config', 0.55);
     p.noStroke(); p.fill(205, 212, 238); p.textAlign(p.CENTER, p.TOP); p.textSize(30); p.text(L.configTitle, CW / 2, 28);
     cfgRowL(L.cfgTurns,     100, TURN_OPTIONS,  CFG.turns);
     cfgStepperL(L.cfgPDice, 190, 'pDice', 1, 10);
@@ -2381,7 +2387,7 @@ new p5(p => {
 
   // ── NPC SELECT scene ──
   function drawNPCSelect() {
-    drawSceneBg('bg_npcselect');
+    drawSceneBg('bg_npcselect', 0.50);
 
     // Title
     p.textFont('Mochiy Pop One, sans-serif');
@@ -2709,7 +2715,7 @@ new p5(p => {
   }
 
   function drawGame() {
-    drawSceneBg('bg_game', 0.65);
+    drawSceneBg('bg_game', 0.30);
     p.noStroke();
 
     // Zone backgrounds
@@ -3358,7 +3364,7 @@ new p5(p => {
   // ── STAGE RESULT scene ──
   // ── DRAFT scene ──
   function drawDraft() {
-    drawSceneBg('bg_draft', 0.60);
+    drawSceneBg('bg_draft', 0.50);
 
     const ds = DS_STATE;
     const isTagPhase  = ds.phase === 'TAG_SELECT';
