@@ -119,7 +119,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.40k',
+      gameTitle: 'ダイスオークション', version: 'v0.41',
 
       // ── Title screen ──
       titleSummary: [
@@ -376,7 +376,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.40k',
+      gameTitle: 'Dice Auction', version: 'v0.41',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -736,6 +736,7 @@ new p5(p => {
       aiBonusDice:  0,
       playerItems:  [],
       playerSpecialCards: [],
+      aiSpecialCards: [],
       aiItems:      [],        // AIのアイテム手持ち
     };
     RUN.winsNeeded = Math.ceil(RUN.totalStages / 2);
@@ -795,7 +796,7 @@ new p5(p => {
       // v0.40: ドラフトで獲得した特別カードもデッキに追加
       pDeckCards: [...CARD_POOL.map(c=>({...c})), ...(RUN&&RUN.playerSpecialCards||[]).map(c=>({...c}))],
       pDeckUsed:  new Set(),                        // used indices this stage
-      aDeckCards: CARD_POOL.map(c => ({...c})),   // AI's deck
+      aDeckCards: [...CARD_POOL.map(c=>({...c})), ...(RUN&&RUN.aiSpecialCards||[]).map(c=>({...c}))],  // AI deck + special
       aDeckUsed:  new Set(),
       isFirstPlayer: true,                          // player is 先行 by default (v0.40)
       cardSelectChosen: new Set(),                  // player's current selection
@@ -986,10 +987,10 @@ new p5(p => {
     const npcIdx = RUN ? RUN.playerNPC : 0;
     const defs = (NPC_SKILL_DEFS[npcIdx] || []).filter(d=>d.type!=='passive');
     const btnW = 218, btnH = 46, gap = 5;
-    // アイテムスロット下端 = PZ.y + 8 + 52 + 8 = PZ.y + 68
-    const itemBottom = PZ.y + 72;
+    // アイテムスロット下端（iH=52, PZ.y+8+52+8=PZ.y+68）の下に配置
+    const itemBottom = PZ.y + 76;
     const panelX = CW - btnW - 16;
-    const panelY = itemBottom + 8 + i * (btnH + gap);
+    const panelY = itemBottom + 4 + i * (btnH + gap);
     return { x: panelX, y: panelY, w: btnW, h: btnH };
   }
 
@@ -2562,7 +2563,7 @@ new p5(p => {
   // ── TITLE scene ──
   function drawTitle() {
     EGG.update();
-    drawSceneBg('bg_title', 0.22);
+    drawSceneBg('bg_title', 0.0);
     const hS = hov(CW / 2 - 150, CH - 112, 300, 56);
     p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 150, CH - 112, 300, 56, 10);
     if (!EGG.words.length) {
@@ -2585,7 +2586,7 @@ new p5(p => {
 
   // ── CONFIG scene ──
   function drawConfig() {
-    drawSceneBg('bg_config', 0.38);
+    drawSceneBg('bg_config', 0.10);
     p.noStroke(); p.fill(205, 212, 238); p.textAlign(p.CENTER, p.TOP); p.textSize(30); p.text(L.configTitle, CW / 2, 28);
     cfgRowL(L.cfgTurns,     100, TURN_OPTIONS,  CFG.turns);
     cfgStepperL(L.cfgPDice, 190, 'pDice', 1, 10);
@@ -2671,7 +2672,7 @@ new p5(p => {
 
   // ── NPC SELECT scene ──
   function drawNPCSelect() {
-    drawSceneBg('bg_npcselect', 0.32);
+    drawSceneBg('bg_npcselect', 0.10);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
 
@@ -2745,25 +2746,22 @@ new p5(p => {
       p.fill(sel ? [145, 195, 165] : [78, 90, 125]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
       _wrapText(L.npcDescs[i], cx + 10, cy + portH + 76, NPC_CARD_W - 20, 14, 4);
 
-      // スキルサマリー
+      // スキルサマリー（_wrapText使用で日本語対応）
       if (L.npcSkillSummary && L.npcSkillSummary[i]) {
-        const skBase = cy + portH + 130;
-        p.fill(sel ? [108, 178, 148] : [55, 70, 105]); p.textSize(9); p.textAlign(p.LEFT, p.TOP);
+        const skBase = cy + portH + 128;
+        p.fill(sel ? [108, 178, 148] : [55, 70, 108]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
         p.textFont('Mochiy Pop One, sans-serif');
-        p.text(lang === 'ja' ? 'スキル' : 'Skills', cx + 10, skBase - 16);
+        p.text(lang === 'ja' ? 'スキル' : 'Skills', cx + 10, skBase - 18);
         p.textFont('sans-serif');
         L.npcSkillSummary[i].forEach((sk, si) => {
-          p.fill(sel ? [138, 205, 165] : [68, 82, 118]); p.textSize(9);
-          p.text('• ' + sk, cx + 10, skBase + si * 15, NPC_CARD_W - 20, 14);
+          p.fill(sel ? [148, 215, 175] : [78, 95, 135]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
+          _wrapText('• ' + sk, cx + 10, skBase + si * 22, NPC_CARD_W - 24, 13, 1);
         });
       }
 
       // Init pt
       p.fill(sel ? [215, 178, 50] : [100, 115, 155]); p.textSize(10); p.textAlign(p.CENTER, p.CENTER);
-      p.text(L.npcInitPt[i], cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 20);
-
-      // Skill note
-      p.fill(80, 95, 138); p.textSize(9);
+      p.text(L.npcInitPt[i], cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 14);
 
     }
 
@@ -3014,7 +3012,7 @@ new p5(p => {
   }
 
   function drawGame() {
-    drawSceneBg('bg_game', 0.18);
+    drawSceneBg('bg_game', 0.10);
     p.noStroke();
 
     // Zone backgrounds
@@ -3163,25 +3161,28 @@ new p5(p => {
         if(nm2) p.text(nm2, ix+iW/2, iY+iH/2+8);
       });
     }
-    // AIアイテムスロット（上部AI情報エリア右側）
+    // AIアイテムスロット（AI情報エリア右端）
     if (RUN && RUN.aiItems && RUN.aiItems.length > 0) {
       const aiItems = RUN.aiItems.slice(-5);
-      const aiIW=44, aiIH=36, aiIGap=4;
-      const aiIStartX = PORT_W + 8;
-      const aiIY = AZ.y + AZ.h - aiIH - 4;
-      p.fill(28,18,42,200); p.stroke(68,48,102); p.strokeWeight(1);
-      p.rect(aiIStartX-4, aiIY-14, aiItems.length*(aiIW+aiIGap)+4, aiIH+18, 6); p.noStroke();
-      p.fill(128,95,168); p.textSize(9); p.textAlign(p.LEFT,p.TOP);
-      p.text(lang==='ja'?'相手アイテム':'Opp Items', aiIStartX-2, aiIY-12);
+      const aiIW=42, aiIH=34, aiIGap=4;
+      // AI情報エリア右端に縦並べ（TB_H内）
+      const aiSX = CW - aiIW - 8;
+      const aiSY = TB_H + 4;
+      p.fill(28,18,42,210); p.stroke(68,48,102); p.strokeWeight(1);
+      const panH = aiItems.length*(aiIH+aiIGap)+16;
+      p.rect(aiSX-4, aiSY, aiIW+8, panH, 6); p.noStroke();
+      p.fill(128,95,168); p.textSize(8); p.textAlign(p.CENTER,p.TOP);
+      p.text(lang==='ja'?'相手':'Opp', aiSX+aiIW/2, aiSY+2);
+      p.text(lang==='ja'?'アイテム':'Item', aiSX+aiIW/2, aiSY+12);
       aiItems.forEach((key,ii)=>{
-        const ax=aiIStartX+ii*(aiIW+aiIGap);
+        const ay=aiSY+16+ii*(aiIH+aiIGap);
         p.fill(45,28,68); p.stroke(88,58,138); p.strokeWeight(1);
-        p.rect(ax,aiIY,aiIW,aiIH,5); p.noStroke();
+        p.rect(aiSX,ay,aiIW,aiIH,5); p.noStroke();
         const nm=(L.draftItemNames&&L.draftItemNames[key]||key);
         p.fill(178,148,215); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
         const nm1=nm.length>3?nm.slice(0,3):nm, nm2=nm.length>3?nm.slice(3):'';
-        p.text(nm1, ax+aiIW/2, aiIY+(nm2?aiIH/2-7:aiIH/2));
-        if(nm2) p.text(nm2, ax+aiIW/2, aiIY+aiIH/2+7);
+        p.text(nm1, aiSX+aiIW/2, ay+(nm2?aiIH/2-7:aiIH/2));
+        if(nm2) p.text(nm2, aiSX+aiIW/2, ay+aiIH/2+7);
       });
     }
     // Player NPC name + passiveスキルインジケーター
@@ -3684,7 +3685,7 @@ new p5(p => {
   // ── STAGE RESULT scene ──
   // ── DRAFT scene ──
   function drawDraft() {
-    drawSceneBg('bg_draft', 0.35);
+    drawSceneBg('bg_draft', 0.10);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
 
@@ -4053,11 +4054,11 @@ new p5(p => {
     // NPC partner display
     p.fill(18, 22, 42); p.rect(CW / 2 - 300, 180, 600, 80, 12);
     const pNpc = RUN.playerNPC, aNpc = RUN.aiNPC;
-    if (npcImgs[pNpc]) { p.imageMode(p.CENTER); p.image(npcImgs[pNpc], CW / 2 - 180, 220, 50, 70, 0, 0, npcImgs[pNpc].width, npcImgs[pNpc].height * 0.5); }
+    if (npcImgs[pNpc]) { const img=npcImgs[pNpc]; const sc=70/img.height; p.imageMode(p.CENTER); p.image(img, CW/2-180, 220, img.width*sc, 70); }
     p.fill(65, 188, 128); p.textSize(13); p.textAlign(p.CENTER, p.CENTER);
     p.text(L.partnerLabel(L.npcNames[pNpc]), CW / 2 - 80, 220);
     p.fill(155, 165, 195); p.textSize(12); p.text('VS', CW / 2 + 20, 220);
-    if (npcImgs[aNpc]) { p.imageMode(p.CENTER); p.image(npcImgs[aNpc], CW / 2 + 160, 220, 50, 70, 0, 0, npcImgs[aNpc].width, npcImgs[aNpc].height * 0.5); }
+    if (npcImgs[aNpc]) { const img=npcImgs[aNpc]; const sc=70/img.height; p.imageMode(p.CENTER); p.image(img, CW/2+160, 220, img.width*sc, 70); }
     p.fill(182, 85, 85); p.textSize(13); p.text(L.aiNpcChosen(L.npcNames[aNpc]), CW / 2 + 220, 220);
 
     // Final run score
@@ -4129,6 +4130,27 @@ new p5(p => {
       helpScrollY = Math.max(0, helpScrollY + event.delta * 0.6);
       return false; // prevent page scroll
     }
+  };
+
+  // ── タッチ操作対応 ──────────────────────────────────────────
+  let _lastTouchTime = 0;
+  const _TOUCH_DEBOUNCE = 280; // ms: 二重タップ防止
+
+  p.touchStarted = function () {
+    return false; // スクロール等デフォルト動作を抑制
+  };
+
+  p.touchMoved = function () {
+    return false; // タッチ中のページスクロールを抑制
+  };
+
+  p.touchEnded = function () {
+    const now = Date.now();
+    if (now - _lastTouchTime < _TOUCH_DEBOUNCE) return false;
+    _lastTouchTime = now;
+    // タッチ座標をmouseX/Yに反映してmouseReleasedを実行
+    p.mouseReleased();
+    return false;
   };
 
   p.mouseReleased = function () {
