@@ -29,6 +29,21 @@
 <meta name="twitter:image"       content="https://amagaki.github.io/dicegame/assets/ogp.png">
 <link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&display=swap" rel="stylesheet">
 <style>
+  /* スマホ対応: dvh/dvwでビューポートをフル活用 */
+  html, body {
+    margin: 0; padding: 0;
+    width: 100dvw; height: 100dvh;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: #08090e;
+  }
+  #gc canvas {
+    max-width: 100dvw;
+    max-height: 100dvh;
+    width: auto !important;
+    height: auto !important;
+    touch-action: none;
+  }
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:#07090f;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
   #gc{width:100%;display:flex;justify-content:center;align-items:center;}
@@ -79,7 +94,7 @@ new p5(p => {
   const ROLL_EXTRA_FRAMES     = 14;
 
   // ── NPC card layout (NPC_SELECT screen) ──
-  const NPC_CARD_W = 256, NPC_CARD_H = 440, NPC_CARD_GAP = 24;
+  const NPC_CARD_W = 256, NPC_CARD_H = 530, NPC_CARD_GAP = 24;
   const NPC_CARD_START_X = (CW - (4 * NPC_CARD_W + 3 * NPC_CARD_GAP)) / 2;
   const NPC_CARD_Y = 100;
 
@@ -95,7 +110,7 @@ new p5(p => {
   const KEEP_LIMIT_VALS  = [3, 5, 8, 16];
   const TURN_OPTIONS     = [5, 8, 10, 15, 20];
   const CARD_OPTIONS     = [2, 3, 4, 5, 6];
-  const STAGE_OPTIONS    = [3, 5, 7];
+  const STAGE_OPTIONS    = [1, 3, 5, 7];
 
 // ══════════════════════════════════════════════════════════════
 // SECTION 2: LANG (辞書)
@@ -104,7 +119,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.40j',
+      gameTitle: 'ダイスオークション', version: 'v0.40k',
 
       // ── Title screen ──
       titleSummary: [
@@ -170,6 +185,12 @@ new p5(p => {
         '相手のダイスを直接崩す干渉者。気まぐれな一手が勝敗を決める。',
       ],
       npcInitPt: ['初期ドラフトpt: 12', '初期ドラフトpt: 11', '初期ドラフトpt: 10', '初期ドラフトpt: 9'],
+      npcSkillSummary: [
+        ['賭け宣言（3回）', '大博打（12pt）'],
+        ['ランタンの灯り（常時）', '見通す目（3回）', '割り当て透視（20pt）'],
+        ['タイブレーク確定（2回）', 'タイブレーク+1（3回）', 'D20の一手（15pt）'],
+        ['ダイス交換（3回）', '出目の反転（2回）', '気まぐれ再ロール（5pt）'],
+      ],
       npcSkillNote: '',
       aiNpcChosen: name => `AIのパートナー：${name}`,
 
@@ -355,7 +376,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.40j',
+      gameTitle: 'Dice Auction', version: 'v0.40k',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -413,6 +434,12 @@ new p5(p => {
         'A disruptive interference expert. One random move can decide the match.',
       ],
       npcInitPt: ['Initial Draft pt: 12', 'Initial Draft pt: 11', 'Initial Draft pt: 10', 'Initial Draft pt: 9'],
+      npcSkillSummary: [
+        ['Bold Bet (×3)', 'All-In (12pt)'],
+        ['Lantern Light (passive)', 'Piercing Eyes (×3)', 'Assign Vision (20pt)'],
+        ['Tie Lock (×2)', 'Tie Boost (×3)', 'D20 Gambit (15pt)'],
+        ['Swap (×3)', 'Reverse (×2)', 'Wild Reroll (5pt)'],
+      ],
       npcSkillNote: '',
       aiNpcChosen: name => `AI Partner: ${name}`,
       you: 'You', opp: 'Opp.', turnLabel: 'Turn',
@@ -827,7 +854,7 @@ new p5(p => {
     const available = G.aDeckCards
       .map((c, i) => ({ ...c, idx: i }))
       .filter(c => !G.aDeckUsed.has(c.idx));
-    // シャッフル後に評価値でソート（上位2倍の中からランダム性を出す）
+    // 特別カードを優先（上位に来やすくする）
     const pool = shuffle(available).sort((a, b) => evalCardForAI(b) - evalCardForAI(a));
     return pool.slice(0, count).map(c => c.idx);
   }
@@ -835,9 +862,20 @@ new p5(p => {
   // AIカード評価（ゲーム状況に応じた価値計算）
   function evalCardForAI(c) {
     const rem = Math.max(1, G.totalTurns - G.turn + 1);
-    if (c.type === 'income')  return c.val * rem;
-    if (c.type === 'invest')  return 5 + (rem - 1) * 1.5;
-    return c.val; // instant
+    let v = 0;
+    if (c.type === 'income')  v = c.val * rem;
+    else if (c.type === 'invest')  v = 5 + (rem - 1) * 1.5;
+    else v = c.val;
+    // 特別カードを優先（ボーナス評価）
+    if (c.isSpecial && c.effect) {
+      if (c.effect === 'ptBonus')    v += 18;
+      if (c.effect === 'oppPtMinus') v += 14;
+      if (c.effect === 'diceAdd')    v += 8;
+      if (c.effect === 'tieDraw')    v += 6;
+      if (c.effect === 'targetNum')  v += 4;
+      if (c.effect === 'partialInfo') v += 3;
+    }
+    return v;
   }
 
   // プレイヤーがカード選択を確定する
@@ -1337,9 +1375,20 @@ new p5(p => {
   function pSpBid()     { return sum(G.pDice.filter(d => d.card === G.market.length).map(d => d.val)); }
 
   function evalCard(c) {
-    if (c.type === 'income') return c.val * (G.totalTurns - G.turn + 1);
-    if (c.type === 'invest') return 5 + (G.totalTurns - G.turn) * 1.5;
-    return c.val;
+    const rem = Math.max(1, G.totalTurns - G.turn + 1);
+    let v = 0;
+    if (c.type === 'income') v = c.val * rem;
+    else if (c.type === 'invest') v = 5 + (rem - 1) * 1.5;
+    else v = c.val;
+    // 特別カードの変化効果でボーナス評価
+    if (c.isSpecial && c.effect) {
+      if (c.effect === 'ptBonus')     v += 14;
+      if (c.effect === 'oppPtMinus')  v += 10;
+      if (c.effect === 'diceAdd')     v += 6;
+      if (c.effect === 'targetNum')   v += 4; // 目標値カードは適切に対応
+      if (c.effect === 'tieDraw')     v += 5;
+    }
+    return v;
   }
   function evalSpecial(s) {
     if (!s) return 4;
@@ -1412,11 +1461,26 @@ new p5(p => {
       if (bids[lowestPri].length > 0) G.aKeepNext.push({ val: bids[lowestPri].pop().val });
     }
     G.aKeepVis = G.aKeepNext.length;
-    G.market.forEach((c, i) => { c.aBid = sum(bids[i].map(d => d.val)); });
+    G.market.forEach((c, i) => {
+      c.aBid = sum(bids[i].map(d => d.val));
+      // targetNum対応: 目標値に近づくようにダイス枚数を調整
+      if (c.effect === 'targetNum' && c.targetVal != null && bids[i].length > 0) {
+        const target = c.targetVal;
+        const sortedDice = bids[i].slice().sort((a,b)=>a.val-b.val);
+        // 1個ずつ追加してtargetに近い合計を探す
+        let best = 0, bestDiff = Infinity;
+        for (let k = 1; k <= sortedDice.length; k++) {
+          const total = sum(sortedDice.slice(0,k).map(d=>d.val));
+          const diff2 = Math.abs(total - target);
+          if (diff2 < bestDiff) { bestDiff = diff2; best = k; }
+        }
+        bids[i] = sortedDice.slice(0, best);
+        c.aBid = sum(bids[i].map(d=>d.val));
+      }
+    });
     if (hasSpec) G.specialCard.aBid = sum(bids[nCards].map(d => d.val));
     updateAIEmotion();
     aiUseItems();
-    // partialInfo用にAIダイスのcard割り当てをここでもシミュレート
     simulateAIDiceAssignment();
   }
 
@@ -2283,7 +2347,7 @@ new p5(p => {
       case 0:{ // ゲームルール
         sec(isJa?'🎯 目的':'🎯 Objective',sy,[65,185,110]);
         bx2(cx,sy+28,cw2-10,60,[52,155,85]);
-        bt(isJa?'複数ステージのダイスオークションで相手より多くのステージを勝ち取ろう！\n先に過半数のステージを獲得した方がラン勝利。\n3ステージ→2勝先取、5ステージ→3勝先取、7ステージ→4勝先取。':'Win more stages than your opponent in dice auctions!\nFirst to a majority of stages wins the run.\n3 stages→first to 2; 5→3; 7→4.',cx+10,sy+36,null,null,4);
+        bt(isJa?'複数ステージのダイスオークションで相手より多くのステージを勝ち取ろう！\n先に過半数のステージを獲得した方がラン勝利。\n1ステージ→1勝で勝利、3ステージ→2勝先取、5ステージ→3勝先取、7ステージ→4勝先取。':'Win more stages than your opponent in dice auctions!\nFirst to a majority of stages wins the run.\n1 stage→1 win; 3→first to 2; 5→3; 7→4.',cx+10,sy+36,null,null,4);
         sec(isJa?'🔄 1ターンの流れ':'🔄 Turn Flow',sy+94,[58,120,195]);
         const steps=isJa?[['① カード選択','先後の枚数差に従い場に出すカードを山札から選ぶ（先行が多く選べる）'],['② ロール','毎ターンダイスを振り直す（キープしたダイスは2段目に表示）'],['③ 割り当て','ダイスを各カードに秘密裏に割り当てる。未割当ダイスはキープ候補'],['④ 公開','双方が確定ボタンを押すと同時公開。合計値が高い方がカードを獲得'],['⑤ 効果適用','収益カード→毎ターン加算、即時カード→即加算、投資カード→ダイス+1']]:
                           [['① Card Select','Both players choose cards; first player selects more'],['② Roll','Dice are rolled fresh each turn (kept dice on second row)'],['③ Assign','Secretly assign dice to cards; unassigned = keep candidates'],['④ Reveal','Both confirm simultaneously. Higher total wins the card'],['⑤ Effects','Income: pts/turn; Instant: pts now; Invest: +1 die/turn']];
@@ -2498,7 +2562,7 @@ new p5(p => {
   // ── TITLE scene ──
   function drawTitle() {
     EGG.update();
-    drawSceneBg('bg_title', 0.40);
+    drawSceneBg('bg_title', 0.22);
     const hS = hov(CW / 2 - 150, CH - 112, 300, 56);
     p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 150, CH - 112, 300, 56, 10);
     if (!EGG.words.length) {
@@ -2521,7 +2585,7 @@ new p5(p => {
 
   // ── CONFIG scene ──
   function drawConfig() {
-    drawSceneBg('bg_config', 0.55);
+    drawSceneBg('bg_config', 0.38);
     p.noStroke(); p.fill(205, 212, 238); p.textAlign(p.CENTER, p.TOP); p.textSize(30); p.text(L.configTitle, CW / 2, 28);
     cfgRowL(L.cfgTurns,     100, TURN_OPTIONS,  CFG.turns);
     cfgStepperL(L.cfgPDice, 190, 'pDice', 1, 10);
@@ -2607,7 +2671,7 @@ new p5(p => {
 
   // ── NPC SELECT scene ──
   function drawNPCSelect() {
-    drawSceneBg('bg_npcselect', 0.50);
+    drawSceneBg('bg_npcselect', 0.32);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
 
@@ -2677,13 +2741,26 @@ new p5(p => {
       p.fill(sel ? [165, 225, 185] : [95, 108, 148]); p.textSize(11);
       p.text(L.npcStyles[i], cx + NPC_CARD_W / 2, cy + portH + 58);
 
-      // Desc (2 lines)
-      p.fill(sel ? [145, 195, 165] : [78, 90, 125]); p.textSize(10);
-      p.text(L.npcDescs[i], cx + 10, cy + portH + 76, NPC_CARD_W - 20, 50);
+      // Desc (wrapText対応)
+      p.fill(sel ? [145, 195, 165] : [78, 90, 125]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
+      _wrapText(L.npcDescs[i], cx + 10, cy + portH + 76, NPC_CARD_W - 20, 14, 4);
+
+      // スキルサマリー
+      if (L.npcSkillSummary && L.npcSkillSummary[i]) {
+        const skBase = cy + portH + 130;
+        p.fill(sel ? [108, 178, 148] : [55, 70, 105]); p.textSize(9); p.textAlign(p.LEFT, p.TOP);
+        p.textFont('Mochiy Pop One, sans-serif');
+        p.text(lang === 'ja' ? 'スキル' : 'Skills', cx + 10, skBase - 16);
+        p.textFont('sans-serif');
+        L.npcSkillSummary[i].forEach((sk, si) => {
+          p.fill(sel ? [138, 205, 165] : [68, 82, 118]); p.textSize(9);
+          p.text('• ' + sk, cx + 10, skBase + si * 15, NPC_CARD_W - 20, 14);
+        });
+      }
 
       // Init pt
-      p.fill(sel ? [215, 178, 50] : [100, 115, 155]); p.textSize(10);
-      p.text(L.npcInitPt[i], cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 28);
+      p.fill(sel ? [215, 178, 50] : [100, 115, 155]); p.textSize(10); p.textAlign(p.CENTER, p.CENTER);
+      p.text(L.npcInitPt[i], cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 20);
 
       // Skill note
       p.fill(80, 95, 138); p.textSize(9);
@@ -2937,7 +3014,7 @@ new p5(p => {
   }
 
   function drawGame() {
-    drawSceneBg('bg_game', 0.30);
+    drawSceneBg('bg_game', 0.18);
     p.noStroke();
 
     // Zone backgrounds
@@ -3080,11 +3157,31 @@ new p5(p => {
         p.rect(ix,iY,iW,iH,6); p.noStroke();
         const nm=(L.draftItemNames&&L.draftItemNames[key]||key);
         p.fill(hI?[225,235,255]:[175,188,225]); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
-        // 2行に折り返す
         const nm1=nm.length>4?nm.slice(0,4):nm;
         const nm2=nm.length>4?nm.slice(4):'';
         p.text(nm1, ix+iW/2, iY+(nm2?iH/2-8:iH/2));
         if(nm2) p.text(nm2, ix+iW/2, iY+iH/2+8);
+      });
+    }
+    // AIアイテムスロット（上部AI情報エリア右側）
+    if (RUN && RUN.aiItems && RUN.aiItems.length > 0) {
+      const aiItems = RUN.aiItems.slice(-5);
+      const aiIW=44, aiIH=36, aiIGap=4;
+      const aiIStartX = PORT_W + 8;
+      const aiIY = AZ.y + AZ.h - aiIH - 4;
+      p.fill(28,18,42,200); p.stroke(68,48,102); p.strokeWeight(1);
+      p.rect(aiIStartX-4, aiIY-14, aiItems.length*(aiIW+aiIGap)+4, aiIH+18, 6); p.noStroke();
+      p.fill(128,95,168); p.textSize(9); p.textAlign(p.LEFT,p.TOP);
+      p.text(lang==='ja'?'相手アイテム':'Opp Items', aiIStartX-2, aiIY-12);
+      aiItems.forEach((key,ii)=>{
+        const ax=aiIStartX+ii*(aiIW+aiIGap);
+        p.fill(45,28,68); p.stroke(88,58,138); p.strokeWeight(1);
+        p.rect(ax,aiIY,aiIW,aiIH,5); p.noStroke();
+        const nm=(L.draftItemNames&&L.draftItemNames[key]||key);
+        p.fill(178,148,215); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+        const nm1=nm.length>3?nm.slice(0,3):nm, nm2=nm.length>3?nm.slice(3):'';
+        p.text(nm1, ax+aiIW/2, aiIY+(nm2?aiIH/2-7:aiIH/2));
+        if(nm2) p.text(nm2, ax+aiIW/2, aiIY+aiIH/2+7);
       });
     }
     // Player NPC name + passiveスキルインジケーター
@@ -3587,7 +3684,7 @@ new p5(p => {
   // ── STAGE RESULT scene ──
   // ── DRAFT scene ──
   function drawDraft() {
-    drawSceneBg('bg_draft', 0.50);
+    drawSceneBg('bg_draft', 0.35);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
 
