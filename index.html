@@ -126,7 +126,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.43h',
+      gameTitle: 'ダイスオークション', version: 'v0.50c',
 
       // ── Title screen ──
       titleSummary: [
@@ -321,8 +321,8 @@ new p5(p => {
       skillNotEnoughPt: 'ptが不足しています',
       skillPanelTitle: name => `${name}のスキル`,
       // 茶々スキル
-      skill_chacha_style_name: '博打師の気質',
-      skill_chacha_style_desc: '茶々のスタイル。賭け宣言に勝った時の効果倍率が他の協力者より高い。リスクを取るほどリターンが大きい戦術に向いている。',
+      skill_chacha_style_name: 'ドラフトの申し子',
+      skill_chacha_style_desc: '茶々はドラフト特化型。他の協力者が×1.5タグ×2枚しか持てないところ、×2.0タグを2枚 + ×1.5タグを2枚の計4枚を保有する。初期ドラフトptも最大の12ptで開始する。',
       skill_chacha_bet_name: '賭け宣言',
       skill_chacha_bet_desc: '割り当てフェーズ中にカード1枚を宣言。そのカードを獲得した場合は効果が×1.5倍になる（investカードを除く）。負けた場合は効果が0になるリスクがある。',
       skill_chacha_bigbet_name: '大博打',
@@ -391,7 +391,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.43h',
+      gameTitle: 'Dice Auction', version: 'v0.50c',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -569,8 +569,8 @@ new p5(p => {
       skillActivate: 'Activated!',
       skillNotEnoughPt: 'Not enough pt',
       skillPanelTitle: name => `${name}'s Skills`,
-      skill_chacha_style_name: 'Gambler\'s Spirit',
-      skill_chacha_style_desc: 'Chacha\'s style. Higher effect multipliers when Bold Bets succeed. The more risk taken, the greater the reward potential.',
+      skill_chacha_style_name: 'Draft Prodigy',
+      skill_chacha_style_desc: 'Chacha is draft-specialized. While others hold only ×1.5 tags ×2, Chacha holds ×2.0 ×2 and ×1.5 ×2 for 4 tags total. Also starts with the highest initial draft pts (12pt).',
       skill_chacha_bet_name: 'Bold Bet',
       skill_chacha_bet_desc: 'Declare 1 card during assign phase. Win it: effect×1.5 (not invest). Lose it: effect becomes 0. High-risk, high-reward — choose your target carefully.',
       skill_chacha_bigbet_name: 'All-In',
@@ -679,7 +679,7 @@ new p5(p => {
         nameKey:'skill_chacha_style_name', descKey:'skill_chacha_style_desc' },
       { key:'chacha_bet',    type:'active',   charges:3, cost:0,  target:'card', phase:'ASSIGN',
         nameKey:'skill_chacha_bet_name', descKey:'skill_chacha_bet_desc' },
-      { key:'chacha_bigbet', type:'enhanced', charges:1, cost:12, target:'none', phase:'ASSIGN',
+      { key:'chacha_bigbet', type:'enhanced', charges:1, cost:8, target:'none', phase:'ASSIGN',
         nameKey:'skill_chacha_bigbet_name', descKey:'skill_chacha_bigbet_desc', requiresSkill:'chacha_bet' },
     ],
     1: [ // 扇灯
@@ -687,7 +687,7 @@ new p5(p => {
         nameKey:'skill_sento_lantern_name', descKey:'skill_sento_lantern_desc' },
       { key:'sento_see',     type:'active',  charges:3, cost:0,  target:'none', phase:'ASSIGN',
         nameKey:'skill_sento_see_name', descKey:'skill_sento_see_desc' },
-      { key:'sento_xray',    type:'enhanced',charges:1, cost:20, target:'none', phase:'ASSIGN',
+      { key:'sento_xray',    type:'enhanced',charges:1, cost:15, target:'none', phase:'ASSIGN',
         nameKey:'skill_sento_xray_name', descKey:'skill_sento_xray_desc' },
     ],
     2: [ // 福夜
@@ -695,7 +695,7 @@ new p5(p => {
         nameKey:'skill_fukuya_tielock_name', descKey:'skill_fukuya_tielock_desc' },
       { key:'fukuya_tiedice', type:'active', charges:3, cost:0,  target:'none', phase:'ASSIGN',
         nameKey:'skill_fukuya_tiedice_name', descKey:'skill_fukuya_tiedice_desc' },
-      { key:'fukuya_d20',     type:'enhanced',charges:1,cost:15, target:'card', phase:'ASSIGN',
+      { key:'fukuya_d20',     type:'enhanced',charges:1,cost:12, target:'card', phase:'ASSIGN',
         nameKey:'skill_fukuya_d20_name', descKey:'skill_fukuya_d20_desc' },
     ],
     3: [ // 奈々
@@ -1466,6 +1466,47 @@ new p5(p => {
     return 4;
   }
 
+  // ── v0.50: AI強化ヘルパー ──────────────────────────────────
+  // evalCardAI: スコア差に応じてカード評価を補正（プレイヤーと同じ公開情報のみ使用）
+  function evalCardAI(card, scoreDiff) {
+    let v = evalCard(card);
+    // リードしている時 → income重視（安全に蓄える）
+    if (scoreDiff > 15 && card.type === 'income')   v *= 1.35;
+    // ビハインドの時 → instant重視（逆転を狙う）
+    if (scoreDiff < -12 && card.type === 'instant') v *= 1.40;
+    if (scoreDiff < -25 && card.type === 'instant') v *= 1.70;
+    return v;
+  }
+
+  // aiEstimatePlayerBids: プレイヤーの推定入札値を返す
+  // 使用する情報: 評価値の比率・プレイヤーのダイス数（UI上で観察可能）
+  function aiEstimatePlayerBids(evals) {
+    const pDiceCount = G.pDice.length;           // 観察可能：相手のダイス数
+    const pAvgVal    = 3.5;                      // 期待値（実際の出目は非公開）
+    const total      = sum(evals) || 1;
+    return evals.map(v => (v / total) * pDiceCount * pAvgVal);
+  }
+
+  // aiCompetitiveEvals: 競合状況を考慮した調整済み評価
+  function aiCompetitiveEvals(baseEvals, scoreDiff) {
+    const pEstBids = aiEstimatePlayerBids(baseEvals);
+    const myAvgVal = G.aPool.length > 0
+      ? sum(G.aPool.map(d => d.val)) / G.aPool.length : 3.5;
+    const myPoolVal = G.aPool.length * myAvgVal;
+    const totalBase = sum(baseEvals) || 1;
+
+    return baseEvals.map((v, i) => {
+      const myExpected = (v / totalBase) * myPoolVal;
+      const pExpected  = pEstBids[i];
+      let adj = v;
+      // プレイヤーが圧倒的有利と予測されるカード → 効率重視で他へ
+      if (pExpected > myExpected * 1.8) adj *= 0.72;
+      // プレイヤーが手薄と予測されるカード → やや重視
+      else if (pExpected < myExpected * 0.55) adj *= 1.18;
+      return adj;
+    });
+  }
+
   function aiDecide() {
     // v0.40: NPCスキル使用判断（プレイヤーと同じタイミング）
     aiUseNPCSkills();
@@ -1473,8 +1514,12 @@ new p5(p => {
     const nCards = G.market.length;
     const hasSpec = !!G.specialCard;
     const nSlots  = nCards + (hasSpec ? 1 : 0);
-    // fukuyaLockedカードは入札値0（タイブレーク確定）
-    const cardEvals = G.market.map((card,i) => card.fukuyaLocked ? 0 : evalCard(card));
+    const scoreDiff = G.aScore - G.pScore;
+    // ① スコア差補正済み評価
+    const cardEvalsBase = G.market.map((card,i) => card.fukuyaLocked ? 0 : evalCardAI(card, scoreDiff));
+    // ② 競合補正（プレイヤーの推定入札を考慮）
+    const cardEvalsComp = aiCompetitiveEvals(cardEvalsBase, scoreDiff);
+    const cardEvals = cardEvalsComp;
     if (hasSpec) cardEvals.push(evalSpecial(G.specialCard));
     const pool  = shuffle([...G.aPool]);
     const bids  = Array.from({ length: nSlots }, () => []);
@@ -1506,6 +1551,7 @@ new p5(p => {
       case 'adaptive': {
         const turnsLeft = G.totalTurns - G.turn, scoreDiff = G.aScore - G.pScore;
         let adjEvals = [...cardEvals], noise = 1.8;
+        if (turnsLeft <= 1 && scoreDiff < -5)  { const best = order[0]; bids[best] = rem.splice(0, rem.length); order.slice(1).forEach(ci => bids[ci] = []); break; }
         if (turnsLeft <= 2 && scoreDiff < -10) { const best = order[0]; bids[best] = rem.splice(0, rem.length); order.slice(1).forEach(ci => bids[ci] = []); break; }
         if (scoreDiff > 20 && turnsLeft > 3) { adjEvals = adjEvals.map((v, i) => i < nCards && G.market[i] && G.market[i].type === 'income' ? v * 1.5 : v); noise = 0.8; }
         if (scoreDiff < -10) { adjEvals = adjEvals.map((v, i) => i < nCards && G.market[i] && G.market[i].type === 'instant' ? v * 1.4 : v); }
@@ -1520,9 +1566,30 @@ new p5(p => {
     }
     G.aKeepNext = [];
     const maxKeep = KEEP_LIMIT_VALS[CFG.keepLimit];
-    if (G.turn < G.totalTurns - 1 && Math.random() < char.keepProb && maxKeep > 0) {
-      const lowestPri = order[nSlots - 1];
-      if (bids[lowestPri].length > 0) G.aKeepNext.push({ val: bids[lowestPri].pop().val });
+    if (G.turn < G.totalTurns - 1 && maxKeep > 0) {
+      // 全ビッドダイスから最高値を探してキープ（5以上のみ対象）
+      const allBidDice = bids.flat();
+      const highDice = allBidDice.filter(d => d.val >= 5).sort((a,b) => b.val - a.val);
+      if (highDice.length > 0 && Math.random() < char.keepProb) {
+        const keepDie = highDice[0];
+        // ビッドから取り除いてキープへ
+        for (let bi = 0; bi < bids.length; bi++) {
+          const idx = bids[bi].indexOf(keepDie);
+          if (idx >= 0) { bids[bi].splice(idx, 1); break; }
+        }
+        G.aKeepNext.push({ val: keepDie.val });
+      } else if (highDice.length === 0 && Math.random() < char.keepProb * 0.5) {
+        // 5未満でも最高値をキープ（確率低め）
+        const anyDice = allBidDice.sort((a,b) => b.val - a.val);
+        if (anyDice.length > 0) {
+          const keepDie = anyDice[0];
+          for (let bi = 0; bi < bids.length; bi++) {
+            const idx = bids[bi].indexOf(keepDie);
+            if (idx >= 0) { bids[bi].splice(idx, 1); break; }
+          }
+          G.aKeepNext.push({ val: keepDie.val });
+        }
+      }
     }
     G.aKeepVis = G.aKeepNext.length;
     // fukuyaLockedカードへの割り当てを強制ゼロ（解放されたダイスは再配分）
@@ -2136,12 +2203,19 @@ new p5(p => {
         case 'fukuya_d20':
           shouldUse = isLosing && turnsLeft <= 3;
           break;
-        // 茶々
-        case 'chacha_bet':
-          shouldUse = Math.random() < (isLosing ? 0.7 : 0.4);
+        // 茶々（価値ベース：残り回数と残りターンを考慮）
+        case 'chacha_bet': {
+          const betCharges = G.aiSkillCharges['chacha_bet'] ?? 0;
+          // 残り回数を残りターン数に分散して使う（毎ターン使い切りを防ぐ）
+          // 残り回数 >= 残りターンなら毎ターン使う、余裕があれば確率で判断
+          const useRate = turnsLeft > 0 ? betCharges / turnsLeft : 1;
+          shouldUse = G.aiChachaBetIdx < 0 && betCharges > 0 && turnsLeft >= 1
+            && (useRate >= 1.0 || isLosing || Math.random() < useRate * 0.9);
           break;
+        }
         case 'chacha_bigbet':
-          shouldUse = isLosing && G.aiChachaBetIdx >= 0 && Math.random() < 0.5;
+          // 賭け宣言済み & ptに余裕がある & 対象カードが高価値なら大博打
+          shouldUse = G.aiChachaBetIdx >= 0 && (isLosing || evalCard(G.market[G.aiChachaBetIdx]||{type:'instant',val:0}) > 12);
           break;
         // 扇灯: AIには見通す目が不要（情報優位）→ tiebreak候補として偵察活用
         case 'sento_see':
@@ -2168,12 +2242,13 @@ new p5(p => {
     switch(key) {
       case 'nana_swap': {
         if (G.aPool.length === 0 || G.pDice.length === 0) break;
-        // AIの最低ダイス ↔ プレイヤーの最高ダイス（未割当）
+        // AIの最低ダイスを渡す（自分のダイスは見える）
+        // 相手のダイスはランダムに選ぶ（値が非公開のため）
         const aLowest = G.aPool.reduce((m,d)=>d.val<m.val?d:m, G.aPool[0]);
         const unass = G.pDice.filter(d=>d.card===null);
         if (unass.length === 0) break;
-        const pHighest = unass.reduce((m,d)=>d.val>m.val?d:m, unass[0]);
-        const tmp = aLowest.val; aLowest.val = pHighest.val; pHighest.val = tmp;
+        const pRandom = unass[Math.floor(Math.random() * unass.length)]; // ランダム選択（非公開）
+        const tmp = aLowest.val; aLowest.val = pRandom.val; pRandom.val = tmp;
         addFloating(lang==='ja'?'相手の奈々：交換！':'Opp Nana: Swap!', FLOAT_POS.AI_X, FLOAT_POS.AI_Y, [178,148,228], 26);
         break;
       }
@@ -2189,8 +2264,9 @@ new p5(p => {
         break;
       }
       case 'fukuya_tielock': {
-        // プレイヤーが最も力を入れているカード（高入札予測）にtieLock
-        const cardVals = G.market.map((c,i)=>({ i, v: evalCard(c) }));
+        // プレイヤーの推定入札が最も高いカードにtieLock（プレイヤーインターフェース経由）
+        const pEstB = aiEstimatePlayerBids(G.market.map(card => card.fukuyaLocked ? 0 : evalCard(card)));
+        const cardVals = G.market.map((card,i)=>({ i, v: pEstB[i] })).filter(x=>!G.market[x.i].fukuyaLocked);
         const target = cardVals.sort((a,b)=>b.v-a.v)[0];
         if (target) {
           if (!G.aiFukuyaTieLockIdxList.includes(target.i)) {
@@ -2497,18 +2573,19 @@ new p5(p => {
         bt(isJa?'ゲーム開始前にNPC（協力者）を1体選ぶ。スキルは毎ステージ開始時にリセット。pt表示は使用時に消費するpt。':'Choose 1 NPC partner before the game. Skills reset each stage. Shown pt = usage cost.',cx+10,sy+34,null,12,2);
         const npcSkills=isJa?[
           {name:'茶々（たぬき）',col:[215,148,52],skills:[
+            {n:'ドラフトの申し子',t:'常時',c:null,d:'茶々はドラフト特化型。他の協力者は×1.5タグ×2枚のみだが\n茶々は×2.0タグ×2枚＋×1.5タグ×2枚の計4枚を所持。\n初期ドラフトptも最大の12ptでスタートする。'},
             {n:'賭け宣言',t:'3回',c:null,d:'割り当てフェーズ中にカード1枚を指定して宣言。\n自分がそのカードを獲得した場合は効果×1.5になる（investを除く）。\n負けた場合は効果が0になる。'},
-            {n:'大博打',t:'1回',c:12,d:'賭け宣言が発動中のターンに追加で使用できる強化スキル。\n勝利時の倍率が×2になる（全カード種別対象）。負けた場合は効果が0になる。'},
+            {n:'大博打',t:'1回',c:8,d:'賭け宣言が発動中のターンに追加で使用できる強化スキル。\n勝利時の倍率が×2になる（全カード種別対象）。負けた場合は効果が0になる。'},
           ]},
           {name:'扇灯（フェネック）',col:[58,148,218],skills:[
             {n:'ランタンの灯り',t:'常時',c:null,d:'デッキポップアップを開くと、相手の未使用カード名が常時確認できる。相手の手札状況を把握して戦略を立てやすくなる。'},
             {n:'見通す目',t:'3回',c:null,d:'発動すると相手の全ダイスが3以下（低）か4以上（高）かを開示する。具体的な値は見えないが、相手の総戦力感を把握できる。'},
-            {n:'割り当て透視',t:'1回',c:20,d:'相手が割り当てを確定した後、自分が確定する前に\n相手の全割り当て内容が公開される。\n完全情報で最適な配分が可能になる。'},
+            {n:'割り当て透視',t:'1回',c:15,d:'相手が割り当てを確定した後、自分が確定する前に\n相手の全割り当て内容が公開される。\n完全情報で最適な配分が可能になる。'},
           ]},
           {name:'福夜（フクロウ）',col:[108,148,228],skills:[
             {n:'タイブレーク確定',t:'2回',c:null,d:'カード1枚を指定し、そのカードへの割り当てを両者とも禁止して\n強制タイブレーク勝負にする。\n相手が大量投資しているカードに対して有効。'},
             {n:'タイブレーク+1',t:'3回',c:null,d:'このターンのタイブレーク発生時に自動発動。\n自分のダイスが4個、相手が3個でのタイブレークになる。\n事前宣言が必要。'},
-            {n:'D20の一手',t:'1回',c:15,d:'カード1枚を指定してD20（1〜20）を振り、\nその値をそのカードの入札値として即時確定する。\n最大20の爆発力がある。'},
+            {n:'D20の一手',t:'1回',c:12,d:'カード1枚を指定してD20（1〜20）を振り、\nその値をそのカードの入札値として即時確定する。\n最大20の爆発力がある。'},
           ]},
           {name:'奈々（黒猫）',col:[178,148,228],skills:[
             {n:'ダイス交換',t:'3回',c:null,d:'自分のダイス1個と相手のダイス1個を選んで交換する。\n相手の高い出目を奪い、低い出目を渡せる。'},
@@ -2517,8 +2594,9 @@ new p5(p => {
           ]},
         ]:[
           {name:'Chacha (Tanuki)',col:[215,148,52],skills:[
+            {n:'Draft Prodigy',t:'Passive',c:null,d:"Chacha specializes in drafting. Others get ×1.5 tags ×2 only, but Chacha gets ×2.0 ×2 and ×1.5 ×2 (4 total).\nAlso starts with the highest initial draft pts (12pt)."},
             {n:'Bold Bet',t:'3/stage',c:null,d:'During assign phase, declare 1 card. Win it: effect ×1.5 (not invest). Lose it: effect = 0.'},
-            {n:'All-In',t:'1/stage',c:12,d:'Additional skill usable when Bold Bet is active.\nWin: multiplier becomes ×2 (all types). Lose: effect = 0.'},
+            {n:'All-In',t:'1/stage',c:8,d:'Additional skill usable when Bold Bet is active.\nWin: multiplier becomes ×2 (all types). Lose: effect = 0.'},
           ]},
           {name:'Sento (Fennec)',col:[58,148,218],skills:[
             {n:'Lantern Light',t:'Passive',c:null,d:'When you open the deck popup, you can see the names of opponent\'s unused cards. Helps you read their strategy.'},
@@ -4908,7 +4986,10 @@ new p5(p => {
         // transient（diceAdd等）は未割当ならキープしない
         G.pKeepNext = G.pDice.filter(d => d.card === null && !d.transient).map(d => ({ val: d.val }));
         const maxK = KEEP_LIMIT_VALS[CFG.keepLimit]; if (G.pKeepNext.length > maxK) G.pKeepNext = G.pKeepNext.slice(0, maxK);
-        resolveAll(); G.phase = 'REVEAL'; G.revStep = -1; G.revTimer = REVEAL_FRAME_PER_CARD; return;
+        resolveAll();
+        // transientダイス（diceAdd等）の未割当分を除去
+        G.pDice = G.pDice.filter(d => !(d.transient && d.card === null));
+        G.phase = 'REVEAL'; G.revStep = -1; G.revTimer = REVEAL_FRAME_PER_CARD; return;
       }
       const aU = G.pDice.filter(d => d.card === null);
       const kD = aU.filter(d => !d.fresh), fD = aU.filter(d => d.fresh);
