@@ -117,7 +117,7 @@ new p5(p => {
   const TB_H = 56;
   const AZ   = { y: 56,  h: 88  };
   const PZ   = { y: 430, h: 252 };
-  const SC   = { x: 1058, y: 148, w: 206, h: 276 };
+  const SC   = { x: 1050, y: 148, w: 214, h: 276 };
 
   // ── Card geometry ──
   const CARD_H = 276, CARD_Y = 148;
@@ -170,7 +170,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.54',
+      gameTitle: 'ダイスオークション', version: 'v0.57',
 
       // ── Title screen ──
       titleSummary: [
@@ -435,7 +435,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.54',
+      gameTitle: 'Dice Auction', version: 'v0.57',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -773,7 +773,7 @@ new p5(p => {
 
   // ── Help overlay state ──
   let helpOpen = false, helpTab = 0, helpScrollY = 0;
-  let tutorialShown = false; // 初回チュートリアル表示済みフラグ（ページ存続中）
+  // tutorialShown/tutorialPhase は廃止 → tutorialSeen に統合
 
   // ── NPC select state ──
   let selectedNPC = 0;
@@ -2528,20 +2528,39 @@ new p5(p => {
   function _wrapText(txt, x, y, maxW, lineH, maxLines) {
     if (!txt) return;
     const ml = (maxLines > 0) ? maxLines : 999;
-    let line = '', drawn = 0;
-    for (const ch of txt) {
-      if (ch === '\n') {
-        p.text(line, x, y + drawn * lineH); drawn++; line = '';
-        if (drawn >= ml) return;
-        continue;
+    let drawn = 0;
+    // 改行で分割してから処理
+    const paragraphs = txt.split('\n');
+    for (const para of paragraphs) {
+      if (drawn >= ml) return;
+      // 英語（ASCII主体）はスペースで単語分割、日本語は文字単位
+      const isLatin = /[a-zA-Z]/.test(para);
+      if (isLatin) {
+        // 単語単位で折り返す
+        const words = para.split(' ');
+        let line = '';
+        for (const word of words) {
+          const test = line ? line + ' ' + word : word;
+          if (p.textWidth(test) > maxW && line) {
+            p.text(line, x, y + drawn * lineH); drawn++;
+            if (drawn >= ml) return;
+            line = word;
+          } else { line = test; }
+        }
+        if (line && drawn < ml) { p.text(line, x, y + drawn * lineH); drawn++; }
+      } else {
+        // 文字単位で折り返す（日本語）
+        let line = '';
+        for (const ch of para) {
+          if (p.textWidth(line + ch) > maxW) {
+            if (line) { p.text(line, x, y + drawn * lineH); drawn++; }
+            if (drawn >= ml) return;
+            line = ch;
+          } else { line += ch; }
+        }
+        if (line && drawn < ml) { p.text(line, x, y + drawn * lineH); drawn++; }
       }
-      if (p.textWidth(line + ch) > maxW) {
-        if (line) { p.text(line, x, y + drawn * lineH); drawn++; }
-        if (drawn >= ml) return;
-        line = ch;
-      } else { line += ch; }
     }
-    if (line && drawn < ml) p.text(line, x, y + drawn * lineH);
   }
 
   function drawHelp() {
@@ -2800,39 +2819,122 @@ new p5(p => {
   }
 
   // ── チュートリアルヒント（初回のみ）──
-  function drawTutorialHint() {
-    const hints = lang === 'ja' ? [
-      ['① ダイスをクリック', '1個ずつ選択 or ドラッグで複数選択'],
-      ['② カードをクリック', '選んだダイスをそのカードへ割り当てる'],
-      ['③ キープとは？', '未割当のダイスは次のターンも使える（個数は相手に見える）'],
-      ['④ 割り当て確定', '全カードへの割り当てが終わったら「割り当て確定」ボタン'],
-    ] : [
-      ['① Click a die', 'Select one or drag to select multiple'],
-      ['② Click a card', 'Assign selected dice to that card'],
-      ['③ Keep dice?', 'Unassigned dice carry over (opponent sees count)'],
-      ['④ Confirm', 'When done assigning, press the Confirm button'],
-    ];
-    const tw = 320, th = hints.length * 52 + 24;
-    const tx = 16, ty = (CH - th) / 2 - 20;
-    p.fill(10, 14, 28, 230); p.stroke(68, 148, 108); p.strokeWeight(1.5);
-    p.rect(tx, ty, tw, th, 12); p.noStroke();
-    p.fill(52, 192, 108); p.textFont('Mochiy Pop One, sans-serif');
-    p.textAlign(p.LEFT, p.TOP); p.textSize(17);
-    p.text(lang === 'ja' ? '📖 操作ガイド（初回のみ）' : '📖 How to Play (first time)', tx + 12, ty + 8);
-    p.textFont('sans-serif');
-    hints.forEach(([title, desc], i) => {
-      const hy = ty + 30 + i * 52;
-      p.fill(108, 192, 148); p.textSize(17); p.textAlign(p.LEFT, p.TOP);
-      p.text(title, tx + 12, hy);
-      p.fill(158, 178, 208); p.textSize(15);
-      _wrapText(desc, tx + 12, hy + 18, tw - 24, 16, 2);
+  // ── チュートリアルヒントデータ ──
+  // ── チュートリアル表示済みフラグ（シーン別）
+  const tutorialSeen = { config:false, npc:false, draft:false, card_select:false, assign:false };
+
+  const TUTORIAL_DATA = {
+    card_select: {
+      col: [58, 148, 218],
+      ja: { title: '📋 カード選択', items: [
+        ['何をするの？', 'デッキからカードを選んで場に出します。先行プレイヤーは多く選べます。'],
+        ['どれを選ぶ？', 'ターンにもよりますが「ダイス＋1」や「毎ターン＋○」のカードがおすすめ。得点を伸ばしやすいです。'],
+        ['特別カードは？', '◆マークのカードは追加効果付き。慣れたら積極的に狙いましょう。'],
+      ]},
+      en: { title: '📋 Card Select', items: [
+        ['What to do?', 'Pick cards from your deck to place on the field. First player picks more.'],
+        ['Which ones?', 'Try "+1 Die" or "Income +N" cards — they build momentum over turns.'],
+        ['Special cards?', '◆ cards have bonus effects. Go for them once you get the hang of it.'],
+      ]},
+    },
+    assign: {
+      col: [52, 192, 108],
+      ja: { title: '🎲 ダイス割り当て', items: [
+        ['基本操作', 'ダイスをクリック→カードをクリックで割り当て。複数選択はドラッグ。'],
+        ['より高い合計値で勝ち', '同じカードに多くのダイスを割り当てた方がそのカードを獲得できます。'],
+        ['未割当ダイス=キープ', '割り当てないダイスは次のターンに持ち越せます（個数は相手に見える）。'],
+        ['確定ボタン', '割り当てが終わったら画面下の「割り当て確定」ボタンを押してください。'],
+      ]},
+      en: { title: '🎲 Assign Dice', items: [
+        ['Basic', 'Click a die → click a card to assign. Drag to select multiple.'],
+        ['Higher total wins', 'Whoever assigns more total pip value to a card wins it.'],
+        ['Unassigned = Keep', 'Unassigned dice carry over (opponent sees the count).'],
+        ['Confirm', 'Press the Confirm button at the bottom when done.'],
+      ]},
+    },
+    config: {
+      col: [215, 178, 50],
+      ja: { title: '⚙️ ゲーム設定', items: [
+        ['ターン数', '1ステージのターン数。最初はデフォルトの10ターンがおすすめです。'],
+        ['ダイス数', 'プレイヤーダイスを増やすと選択肢が広がります。まずは増やしてみましょう。'],
+        ['AI対戦相手', '右側でAIを選べます。まずはエルダー（バランス型）がおすすめ。'],
+        ['ステージ数', 'ステージを多く勝った方がラン勝利。手早く終わらせたい場合は1がおすすめ。'],
+      ]},
+      en: { title: '⚙️ Game Settings', items: [
+        ['Turns', 'Turns per stage. Default 10 turns is recommended to start.'],
+        ['Dice count', 'Try increasing your player dice for more options each turn.'],
+        ['AI opponent', 'Pick from the right. Elder (balanced) is recommended first.'],
+        ['Stages', 'Win more stages to win the run. Try 1 stage for a quick game.'],
+      ]},
+    },
+    npc: {
+      col: [178, 148, 228],
+      ja: { title: '🧙 協力者選択', items: [
+        ['協力者とは？', 'ゲーム中に使えるスキルが変わります。全員の特徴を読んでみましょう。'],
+        ['茶々（たぬき）', 'ドラフト特化。×2タグを2枚持ち、入札倍率を稼ぎやすい。'],
+        ['扇灯（フェネック）', '情報系。相手のカードや割り当てを見るスキルを持つ。'],
+        ['福夜（フクロウ）', 'タイブレーク（同点時のダイス勝負）特化。強制タイブレークやD20で勝負を決める。'],
+        ['奈々（黒猫）', 'ダイス操作。交換・反転・再ロールで出目を有利に変える。'],
+      ]},
+      en: { title: '🧙 Choose Partner', items: [
+        ['What is a partner?', 'Your partner determines what skills you can use in-game.'],
+        ['Chacha (Tanuki)', 'Draft specialist. Holds ×2 tags to maximize bid multipliers.'],
+        ['Sento (Fennec)', 'Info-based. Skills to spy on opponent cards and assignments.'],
+        ['Fukuya (Owl)', 'Tiebreak (dice duel on a draw) specialist. Force ties or use D20 for wild swings.'],
+        ['Nana (Cat)', 'Dice manipulation. Swap, flip, or reroll for better outcomes.'],
+      ]},
+    },
+    draft: {
+      col: [52, 192, 108],
+      ja: { title: '📜 ドラフト', items: [
+        ['ドラフトとは？', 'ゲーム開始前とステージ間に行う入札です。各スロットにタグを設定し入札倍率を上げましょう。'],
+        ['タグの使い方', '左側のタグをドラッグするか、スロットをクリックしてタグを設定します。タグを付けると入札額が×1.5または×2に増加。ptを多く入れた方がそのスロットの効果を獲得します。'],
+        ['優先権', '先行・後攻選択権スロットを獲得すると次ステージの手番を選べます。'],
+        ['まず狙うべきは？', 'ダイス追加スロットか特別カードスロット。効果が大きくゲームに影響します。'],
+      ]},
+      en: { title: '📜 Draft', items: [
+        ['What is draft?', 'A bidding phase before the game and between stages. Set tags on slots to raise your bid multiplier.'],
+        ['Using tags', 'Drag a tag from the left OR click a slot to assign it. Tags multiply your bid by ×1.5 or ×2. Whoever bids more pt wins that slot.'],
+        ['Priority', 'Win the Priority slot to choose who goes first next stage.'],
+        ['What to aim for?', 'Dice bonus or Special Card slots have the biggest game impact.'],
+      ]},
+    },
+  };
+
+  function drawTutorialHint(tphase) {
+    const tdata = TUTORIAL_DATA[tphase];
+    if (!tdata) return;
+    const loc = lang === 'ja' ? tdata.ja : tdata.en;
+    const items = loc.items;
+    const tw = 600, itemH = 96, th = items.length * itemH + 112;
+    const tx = CW/2 - tw/2, ty = Math.max(8, CH/2 - th/2);
+    // 暗幕
+    p.fill(0, 0, 0, 160); p.noStroke(); p.rect(0, 0, CW, CH);
+    // 背景パネル
+    p.fill(8, 12, 26, 250); p.stroke(...tdata.col); p.strokeWeight(2);
+    p.rect(tx, ty, tw, th, 14); p.noStroke();
+    // タイトルバー
+    p.fill(...tdata.col, 50); p.rect(tx, ty, tw, 52, 14, 14, 0, 0);
+    p.fill(...tdata.col); p.textFont('Mochiy Pop One, sans-serif'); p.textSize(22);
+    p.textAlign(p.LEFT, p.CENTER); p.text(loc.title, tx+16, ty+26); p.textFont('sans-serif');
+    // 項目
+    items.forEach(([title, desc], i) => {
+      const hy = ty + 58 + i * itemH;
+      p.noStroke(); p.fill(...tdata.col, 12); p.rect(tx+10, hy, tw-20, itemH-8, 8);
+      p.fill(...tdata.col); p.textSize(19); p.textAlign(p.LEFT, p.TOP);
+      p.textFont('Mochiy Pop One, sans-serif'); p.text(title, tx+20, hy+10); p.textFont('sans-serif');
+      p.fill(185, 198, 230); p.textSize(18);
+      _wrapText(desc, tx+20, hy+32, tw-40, 20, 3);
     });
-    // 閉じるボタン
-    const bx = tx + tw - 72, by2 = ty + th - 32;
-    const hClose = hov(bx, by2, 64, 24);
-    p.fill(hClose ? [52, 108, 78] : [32, 72, 52]); p.rect(bx, by2, 64, 24, 6);
-    p.fill(182, 225, 200); p.textSize(15); p.textAlign(p.CENTER, p.CENTER);
-    p.text(lang === 'ja' ? '閉じる' : 'Close', bx + 32, by2 + 12);
+    // 了解ボタン（大きく・中央）
+    const btnW=200, btnH=48, btnX=CW/2-btnW/2, btnY=ty+th-66;
+    const hBtn = hov(btnX, btnY, btnW, btnH);
+    p.fill(hBtn ? [...tdata.col] : [tdata.col[0]*0.7|0, tdata.col[1]*0.7|0, tdata.col[2]*0.7|0]);
+    p.rect(btnX, btnY, btnW, btnH, 10);
+    p.fill(255); p.textFont('Mochiy Pop One, sans-serif'); p.textSize(20);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.text(lang==='ja'?'確認':'OK', CW/2, btnY+btnH/2);
+    p.textFont('sans-serif');
   }
 
   // ── TITLE scene ──
@@ -2860,11 +2962,11 @@ new p5(p => {
     p.drawingContext.fill();
     p.drawingContext.fillStyle = '#000';
     if (!EGG.words.length) {
-      p.textFont('Mochiy Pop One, sans-serif'); p.textSize(14);
+      p.textFont('Mochiy Pop One, sans-serif'); p.textSize(17);
       [{ k: 'ja', label: '日本語' }, { k: 'en', label: 'English' }].forEach((lv, i) => {
         const active = lang === lv.k;
-        p.fill(active ? [215, 178, 48] : [88, 96, 128]); p.textAlign(p.LEFT, p.CENTER); p.text(lv.label, 18, 22 + i * 28);
-        if (active) { p.noStroke(); p.fill(215, 178, 48); p.rect(16, 32 + i * 28, lang === 'ja' ? 66 : 64, 2); }
+        p.fill(active ? [215, 178, 48] : [88, 96, 128]); p.textAlign(p.LEFT, p.CENTER); p.text(lv.label, 18, 22 + i * 32);
+        if (active) { p.noStroke(); p.fill(215, 178, 48); p.rect(16, 36 + i * 32, lang === 'ja' ? 78 : 76, 2); }
       });
       // タイトルグラデーション（ゴールド → クリーム → 薄いゴールド）
       p.textFont('Fredoka One, sans-serif'); p.textAlign(p.CENTER, p.CENTER); p.textSize(72);
@@ -2956,6 +3058,7 @@ new p5(p => {
     p.textFont('Mochiy Pop One, sans-serif'); p.fill(hS ? [52, 148, 82] : [34, 108, 58]); p.rect(CFG_LX, 612, CFG_LW, 50, 10);
     p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(18); p.text(L.configStart, CFG_LX + CFG_LW / 2, 637); p.textFont('sans-serif');
     p.fill(28, 36, 58); p.textAlign(p.RIGHT, p.BOTTOM); p.textSize(11); p.text(L.version, CW - 12, CH - 8);
+    if (!tutorialSeen.config) drawTutorialHint('config');
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) drawHelp();
   }
@@ -2999,7 +3102,6 @@ new p5(p => {
     drawSceneBg('bg_npcselect', 0.10);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
-
     // Title
     p.textFont('Mochiy Pop One, sans-serif');
     p.fill(52, 192, 108); p.textAlign(p.CENTER, p.CENTER); p.textSize(28); p.text(L.npcSelectTitle, CW / 2, 46);
@@ -3063,28 +3165,28 @@ new p5(p => {
       p.text(engNames[i], cx + NPC_CARD_W / 2, cy + portH + 40);
 
       // Style
-      p.fill(sel ? [165, 225, 185] : [95, 108, 148]); p.textSize(11);
+      p.fill(sel ? [165, 225, 185] : [95, 108, 148]); p.textSize(13);
       p.text(L.npcStyles[i], cx + NPC_CARD_W / 2, cy + portH + 58);
 
       // Desc (wrapText対応)
-      p.fill(sel ? [145, 195, 165] : [78, 90, 125]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
-      _wrapText(L.npcDescs[i], cx + 10, cy + portH + 76, NPC_CARD_W - 20, 14, 4);
+      p.fill(sel ? [145, 195, 165] : [78, 90, 125]); p.textSize(13); p.textAlign(p.LEFT, p.TOP);
+      _wrapText(L.npcDescs[i], cx + 10, cy + portH + 76, NPC_CARD_W - 20, 17, 4);
 
       // スキルサマリー（_wrapText使用で日本語対応）
       if (L.npcSkillSummary && L.npcSkillSummary[i]) {
         const skBase = cy + portH + 128;
-        p.fill(sel ? [108, 178, 148] : [55, 70, 108]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
+        p.fill(sel ? [108, 178, 148] : [55, 70, 108]); p.textSize(13); p.textAlign(p.LEFT, p.TOP);
         p.textFont('Mochiy Pop One, sans-serif');
         p.text(lang === 'ja' ? 'スキル' : 'Skills', cx + 10, skBase - 18);
         p.textFont('sans-serif');
         L.npcSkillSummary[i].forEach((sk, si) => {
-          p.fill(sel ? [148, 215, 175] : [78, 95, 135]); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
-          _wrapText('• ' + sk, cx + 10, skBase + si * 22, NPC_CARD_W - 24, 13, 1);
+          p.fill(sel ? [148, 215, 175] : [78, 95, 135]); p.textSize(13); p.textAlign(p.LEFT, p.TOP);
+          _wrapText('• ' + sk, cx + 10, skBase + si * 25, NPC_CARD_W - 24, 15, 1);
         });
       }
 
       // Init pt
-      p.fill(sel ? [215, 178, 50] : [100, 115, 155]); p.textSize(10); p.textAlign(p.CENTER, p.CENTER);
+      p.fill(sel ? [215, 178, 50] : [100, 115, 155]); p.textSize(12); p.textAlign(p.CENTER, p.CENTER);
       p.text(L.npcInitPt[i], cx + NPC_CARD_W / 2, cy + NPC_CARD_H - 14);
 
     }
@@ -3100,6 +3202,7 @@ new p5(p => {
 
     p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
     drawBackBtn();
+    if (!tutorialSeen.npc) drawTutorialHint('npc');
   }
 
   // ── GAME scene: card drawing ──
@@ -3127,21 +3230,21 @@ new p5(p => {
       p.noFill(); p.stroke(108,148,228); p.strokeWeight(2.5); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12);
       // ロック表示オーバーレイ
       p.noStroke(); p.fill(108,148,228,18); p.rect(r.x,r.y,r.w,r.h,10);
-      p.fill(148,188,255,200); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(148,188,255,200); p.textSize(14); p.textAlign(p.CENTER,p.CENTER);
       p.text(lang==='ja'?'🔒TB確定':'🔒TieLock', r.x+r.w/2, r.y+12);
     }
     // AI茶々賭け宣言マーカー（右上に★相手マーク）
     if (G.aiChachaBetIdx === i) {
       p.noFill(); p.stroke(...COL.GOLD); p.strokeWeight(2); p.drawingContext.setLineDash([4,3]); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12); p.drawingContext.setLineDash([]);
       p.fill(215,140,50,200); p.rect(r.x+r.w-44,r.y+6,40,18,5);
-      p.fill(255); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
       p.text(lang==='ja'?'相手賭':'OppBet', r.x+r.w-24, r.y+15);
     }
     // AI福夜タイブレーク確定マーカー（破線青枠）
     if ((G.aiFukuyaTieLockIdxList||[]).includes(i)) {
       p.noFill(); p.stroke(108,148,228); p.strokeWeight(2); p.drawingContext.setLineDash([4,3]); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12); p.drawingContext.setLineDash([]);
       p.fill(108,148,228,200); p.rect(r.x+r.w-44,r.y+6,40,18,5);
-      p.fill(255); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
       p.text(lang==='ja'?'相手TB':'OppTie', r.x+r.w-24, r.y+15);
     }
     // 封印ハイライト（紫枠）
@@ -3159,38 +3262,38 @@ new p5(p => {
     const _cardLabel = (c.isSpecial && c.spName) ? c.spName : (L.cardNames[c.key] || c.key);
     p.fill(c.isSpecial ? [235,215,255] : [215,225,245]); p.textAlign(p.CENTER, p.TOP); p.textSize(c.isSpecial?15:17);
     p.text(_cardLabel, r.x + r.w / 2, r.y + CARD_UI.NAME_Y);
-    p.fill(...tc); p.textSize(12); p.text(c.type === 'income' ? L.cardEffect.income(c.val) : c.type === 'invest' ? L.cardEffect.invest() : L.cardEffect.instant(c.val), r.x + r.w / 2, r.y + CARD_UI.EFF_Y);
+    p.fill(...tc); p.textSize(16); p.text(c.type === 'income' ? L.cardEffect.income(c.val) : c.type === 'invest' ? L.cardEffect.invest() : L.cardEffect.instant(c.val), r.x + r.w / 2, r.y + CARD_UI.EFF_Y);
     // 変化効果バッジ（特別カード）+ targetVal表示
     const isTarget = !!(c.effect && c.isSpecial && c.effect==='targetNum' && c.targetVal!=null);
     if (c.effect && c.isSpecial) {
       const effName = (L.specialCardEffectNames&&L.specialCardEffectNames[c.effect]) || c.effect;
       p.fill(...COL.SKILL,220); p.rect(r.x+6, r.y+118, r.w-12, isTarget?28:16, 4);
-      p.fill(235,220,255); p.textSize(9); p.textAlign(p.CENTER,p.TOP);
+      p.fill(235,220,255); p.textSize(12); p.textAlign(p.CENTER,p.TOP);
       p.text('◆ '+effName, r.x+r.w/2, r.y+120);
       if (isTarget) {
-        p.fill(...COL.GOLD); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
+        p.fill(...COL.GOLD); p.textSize(14); p.textAlign(p.CENTER,p.TOP);
         p.text((lang==='ja'?'目標値: ':'Target: ')+c.targetVal, r.x+r.w/2, r.y+131);
       }
     }
     const by = r.y + CARD_UI.BY_OFF; // 固定位置（特別カードでも同じ） p.fill(...COL.BG_CARD); p.rect(r.x + CARD_UI.INNER_X, by, r.w - CARD_UI.INNER_X*2, CARD_UI.BY_H, 6);
-    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
+    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(14); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
     // target比較の場合は合計値を表示（近い方が勝つと分かるように）
     if (c.effect === 'targetNum' && c.targetVal != null) {
       const assigned = G.pDice.filter(d=>d.card===i);
       const total = sum(assigned.map(d=>d.val));
       const dist = Math.abs(total - c.targetVal);
       p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.fill(68,190,126); p.text(total, r.x+r.w-10, by+19);
-      p.fill(148,162,200); p.textSize(9); p.textAlign(p.RIGHT,p.CENTER);
+      p.fill(148,162,200); p.textSize(12); p.textAlign(p.RIGHT,p.CENTER);
       p.text((lang==='ja'?'差:':'dist:')+dist, r.x+r.w-10, by+34);
     } else {
       p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.YOU_Y);
     }
-    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
+    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(14); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
     // partialInfo: ownerが'p'（自分のカード）の時のみ、相手のダイス数をプレイヤーに表示
     if (c.effect === 'partialInfo' && c.isSpecial && c.owner === 'p' && G.phase === 'ASSIGN') {
       const aCount = c.aCountCache ?? G.aPool.filter(d=>d.card===i).length; // キャッシュ優先
       p.fill(14,22,48); p.rect(r.x+6, by+38, r.w-12, 28, 4);
-      p.fill(108,172,248); p.textSize(11); p.textAlign(p.LEFT,p.CENTER);
+      p.fill(108,172,248); p.textSize(14); p.textAlign(p.LEFT,p.CENTER);
       p.text(lang==='ja'?'🎯 相手割当:':'🎯 Opp Dice:', r.x+12, by+52);
       p.fill(aCount>0?[65,215,148]:[128,142,180]); p.textSize(20); p.textAlign(p.RIGHT,p.CENTER);
       p.text(aCount+'個', r.x+r.w-10, by+52);
@@ -3216,7 +3319,7 @@ new p5(p => {
           // 背景を薄く（アルファ100）してその下の数値が透けて見えるように
           p.noStroke(); p.fill(...mk.col,90); p.rect(r.x+6, mY2, r.w-12, mH, 3);
           // テキストは大きく・不透明
-          p.fill(255,255,255,240); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
+          p.fill(255,255,255,240); p.textSize(15); p.textAlign(p.CENTER,p.CENTER);
           p.textFont('Mochiy Pop One, sans-serif');
           p.text(mk.txt, r.x+r.w/2, mY2+mH/2);
           p.textFont('sans-serif');
@@ -3230,19 +3333,19 @@ new p5(p => {
       p.fill(160,80,230,230); p.rect(r.x+r.w-62, r.y+22, 56, 48, 8);
       p.fill(240,215,255); p.textSize(26); p.textAlign(p.CENTER,p.CENTER);
       p.textFont('Mochiy Pop One, sans-serif'); p.text('×0', r.x+r.w-34, r.y+38); p.textFont('sans-serif');
-      p.fill(220,185,255); p.textSize(10); p.text(lang==='ja'?'封印中':'Sealed', r.x+r.w-34, r.y+58);
+      p.fill(220,185,255); p.textSize(13); p.text(lang==='ja'?'封印中':'Sealed', r.x+r.w-34, r.y+58);
     }
     if (G.enhancedCardIdx === i) {
       p.noStroke(); p.fill(40,120,210,40); p.rect(r.x+1,r.y+5,r.w-2,r.h-6,0,0,10,10);
       p.fill(30,100,200,230); p.rect(r.x+r.w-62, r.y+22, 56, 48, 8);
       p.fill(160,225,255); p.textSize(26); p.textAlign(p.CENTER,p.CENTER);
       p.textFont('Mochiy Pop One, sans-serif'); p.text('×2', r.x+r.w-34, r.y+38); p.textFont('sans-serif');
-      p.fill(130,205,255); p.textSize(10); p.text(lang==='ja'?'強化中':'Enhanced', r.x+r.w-34, r.y+58);
+      p.fill(130,205,255); p.textSize(13); p.text(lang==='ja'?'強化中':'Enhanced', r.x+r.w-34, r.y+58);
     }
     if (c.winner && revealed) {
       const wc = c.winner === 'p' ? [52, 190, 98] : c.winner === 'a' ? [190, 68, 68] : [192, 165, 52];
       p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - CARD_UI.WINNER_Y, 92, 25, 12);
-      p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(11);
+      p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(14);
       p.text(c.winner === 'p' ? L.wonLabel : c.winner === 'a' ? L.oppWon : L.tieLabel, r.x + r.w / 2, r.y + r.h - 20);
     }
     G.pDice.filter(d => d.card === i).forEach((d, di) => {
@@ -3276,20 +3379,20 @@ new p5(p => {
     p.rect(r.x, r.y, r.w, 5, 10, 10, 0, 0);
     p.fill(15, 8, 26); p.rect(r.x + CARD_UI.INNER_X, r.y + 10, r.w - 12, 68, 6);
     drawIcon(r.x + r.w / 2, r.y + CARD_UI.ICON_Y, 'special', 40);
-    p.fill(200, 148, 255); p.textAlign(p.CENTER, p.TOP); p.textSize(11); p.text('— ' + L.specialLabel + ' —', r.x + r.w / 2, r.y + 82);
-    p.fill(228, 198, 255); p.textSize(15); p.text(L.specialNames[sc.effectType] || sc.effectType, r.x + r.w / 2, r.y + 98);
-    p.fill(175, 142, 215); p.textSize(10); p.text(L.specialDescs[sc.effectType] || '', r.x + 8, r.y + 118, r.w - 16, 62);
-    const by = r.y + 188; p.fill(18, 10, 35); p.rect(r.x + CARD_UI.INNER_X, by, r.w - CARD_UI.INNER_X*2, CARD_UI.BY_H, 6);
-    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
+    p.fill(200, 148, 255); p.textAlign(p.CENTER, p.TOP); p.textSize(14); p.text('— ' + L.specialLabel + ' —', r.x + r.w / 2, r.y + 82);
+    p.fill(228, 198, 255); p.textSize(17); p.text(L.specialNames[sc.effectType] || sc.effectType, r.x + r.w / 2, r.y + 98);
+    p.fill(175, 142, 215); p.textSize(13); p.textAlign(p.LEFT, p.TOP); _wrapText(L.specialDescs[sc.effectType] || '', r.x + 8, r.y + 116, r.w - 14, 16, 4);
+    const by = r.y + 192; p.fill(18, 10, 35); p.rect(r.x + CARD_UI.INNER_X, by, r.w - CARD_UI.INNER_X*2, CARD_UI.BY_H, 6);
+    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(14); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
     p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.YOU_Y);
-    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
+    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(14); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
     p.textSize(22); p.textAlign(p.RIGHT, p.CENTER);
     if (revealed) { p.fill(...COL.A_RED_MD); p.text(sc.aBid, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
     else           { p.fill(68, 80, 110);  p.text('—', r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
     if (sc.winner && revealed) {
       const wc = sc.winner === 'p' ? [52, 190, 98] : sc.winner === 'a' ? [190, 68, 68] : [192, 165, 52];
       p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - CARD_UI.WINNER_Y, 92, 25, 12);
-      p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(11);
+      p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(14);
       p.text(sc.winner === 'p' ? L.wonLabel : sc.winner === 'a' ? L.oppWon : L.tieLabel, r.x + r.w / 2, r.y + r.h - 20);
     }
     G.pDice.filter(d => d.card === G.market.length).forEach((d, di) => { const s = scSlot(di); drawDie(s.x, s.y, d.val, DSS, d.fresh ? [58, 108, 192] : [155, 118, 42], false, false); });
@@ -3315,7 +3418,7 @@ new p5(p => {
     const badge = G.isFirstPlayer ? L.cardSelectFirst : L.cardSelectSecond;
     const badgeCol = G.isFirstPlayer ? [52, 192, 108] : [192, 68, 68];
     p.fill(...badgeCol); p.rect(CS_PANEL_X + 12, CS_PANEL_Y + 10, 44, 22, 6);
-    p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(11);
+    p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(13);
     p.text(badge, CS_PANEL_X + 34, CS_PANEL_Y + 21);
 
     // 未使用カードのグリッド表示
@@ -3347,12 +3450,12 @@ new p5(p => {
       // カード名（特別カードはspName優先）
       const _csName = (c.isSpecial && c.spName) ? c.spName : (L.cardNames[c.key] || c.key || '---');
       p.fill(sel ? [200, 248, 215] : c.isSpecial ? [235,215,255] : [185, 198, 228]);
-      p.textAlign(p.CENTER, p.TOP); p.textSize(c.isSpecial ? 10 : 12);
+      p.textAlign(p.CENTER, p.TOP); p.textSize(c.isSpecial ? 12 : 13);
       p.textFont(c.isSpecial ? 'sans-serif' : 'sans-serif');
       p.text(_csName, cx + CS_CARD_W / 2, cy + 6);
 
       // 効果テキスト
-      p.fill(...tc); p.textSize(10);
+      p.fill(...tc); p.textSize(12);
       const eff = c.type === 'income' ? L.cardEffect.income(c.val)
                 : c.type === 'invest' ? L.cardEffect.invest()
                 : L.cardEffect.instant(c.val);
@@ -3362,7 +3465,7 @@ new p5(p => {
       if (c.isSpecial && c.effect) {
         const _csEffName = (L.specialCardEffectNames && L.specialCardEffectNames[c.effect]) || c.effect;
         const _csTgt = c.effect==='targetNum' && c.targetVal!=null ? ' '+c.targetVal : '';
-        p.fill(178,148,228); p.textSize(9); p.textAlign(p.CENTER,p.TOP);
+        p.fill(178,148,228); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
         p.text('◆ '+_csEffName+_csTgt, cx + CS_CARD_W / 2, cy + 36);
       }
 
@@ -3383,7 +3486,7 @@ new p5(p => {
     p.text(L.cardSelectConfirmBtn, CW / 2, btnY + 21);
 
     // AIが選んだカードの枚数ヒント
-    p.fill(115, 128, 165); p.textSize(11); p.textAlign(p.CENTER, p.CENTER);
+    p.fill(115, 128, 165); p.textSize(12); p.textAlign(p.CENTER, p.CENTER);
     p.text(lang === 'ja'
       ? `相手は ${G.aMarketSelected.length} 枚選択済み`
       : `Opponent selected ${G.aMarketSelected.length} card(s)`,
@@ -3425,11 +3528,11 @@ new p5(p => {
     // Top-bar right: emotion, score, income, dice
     p.noStroke();
     p.fill(190, 150, 240); p.textAlign(p.LEFT, p.CENTER); p.textSize(20); p.text(G.aiEmotion || '(^_^)', 174, 14);
-    p.fill(180, 86, 86); p.textAlign(p.LEFT, p.TOP); p.textSize(12); p.text(L.opp, 174, 32);
+    p.fill(180, 86, 86); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(L.opp, 174, 32);
     p.textSize(24); p.text(G.aScore + 'pt', 204, 30);
     const ai2 = sum(G.aIncome); let aiY = 54;
-    if (ai2 > 0) { p.fill(152, 68, 68); p.textSize(11); p.text(L.oppIncome(ai2), 174, aiY); aiY += 14; }
-    p.fill(105, 115, 158); p.textSize(11); p.text(L.dicePerTurn(G.aPerTurn), 174, aiY);
+    if (ai2 > 0) { p.fill(152, 68, 68); p.textSize(14); p.text(L.oppIncome(ai2), 174, aiY); aiY += 14; }
+    p.fill(105, 115, 158); p.textSize(14); p.text(L.dicePerTurn(G.aPerTurn), 174, aiY);
     // v0.40: AI deck counter
     if (G.aDeckCards) {
       const aUnused = G.aDeckCards.length - G.aDeckUsed.size;
@@ -3438,24 +3541,24 @@ new p5(p => {
       // 山札アイコン
       p.fill(aFlash?[215,178,50]:[32,42,72]); p.stroke(aFlash?[255,215,80]:[58,78,118]); p.strokeWeight(1.5);
       p.rect(174, aiY+16, 38, 26, 5); p.noStroke();
-      p.fill(aFlash?[20,16,8]:[155,175,215]); p.textSize(9); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(aFlash?[20,16,8]:[155,175,215]); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
       p.text('📦 '+aUnused, 193, aiY+29);
       // 捨て場アイコン
       p.fill(28,22,48); p.stroke(68,52,98); p.strokeWeight(1.5);
       p.rect(216, aiY+16, 38, 26, 5); p.noStroke();
-      p.fill(120,100,158); p.textSize(9); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(120,100,158); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
       p.text('🗑 '+aUsed, 235, aiY+29);
     }
 
     // AI NPC name (small)
     if (RUN && RUN.aiNPC !== undefined) {
-      p.fill(128, 100, 168); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
+      p.fill(128, 100, 168); p.textSize(13); p.textAlign(p.LEFT, p.TOP);
       p.text(L.aiNpcChosen(L.npcNames[RUN.aiNPC]), 174, aiY + 14);
     }
 
     // Turn + run indicator (center)
     p.textFont('Mochiy Pop One, sans-serif');
-    p.fill(175, 185, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(15);
+    p.fill(175, 185, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(17);
     p.text(`${L.turnLabel} ${G.turn} / ${G.totalTurns}`, CW / 2 - 50, 14);
     p.textFont('sans-serif');
     // Turn dots
@@ -3471,7 +3574,7 @@ new p5(p => {
     }
     // Stage indicator (small, top-right area)
     if (RUN && RUN.totalStages) {
-      p.fill(115, 128, 168); p.textSize(11); p.textAlign(p.CENTER, p.CENTER);
+      p.fill(115, 128, 168); p.textSize(14); p.textAlign(p.CENTER, p.CENTER);
       p.text(L.stageLabel(RUN.currentStage, RUN.totalStages), CW / 2 - 50, 48);
     }
 
@@ -3482,7 +3585,7 @@ new p5(p => {
     if (G.aKeepVis > 0 && adl.keptW > 0) {
       const kx = adl.keptStartX - 6, ky = AZ.y + 10, kw = adl.keptW + 12, kh = DSS + 22;
       p.noFill(); p.stroke(215, 172, 50); p.strokeWeight(1.5); p.rect(kx, ky, kw, kh, 8);
-      p.noStroke(); p.fill(215, 172, 50); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(11); p.text(L.keepFull(G.aKeepVis), kx + kw / 2, ky + 2);
+      p.noStroke(); p.fill(215, 172, 50); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(14); p.text(L.keepFull(G.aKeepVis), kx + kw / 2, ky + 2);
     }
     adl.positions.forEach((pos, di) => {
       drawDie(pos.x, AZ.y + 16, 0, DSS, pos.held ? [148, 112, 40] : [48, 62, 105], false, true);
@@ -3490,7 +3593,7 @@ new p5(p => {
       // 索敵マーカー（scoutActive時：値レンジを表示）
       if (G.scoutActive && G.oppDiceVisible && G.oppDiceVisible[di]) {
         const marker = G.oppDiceVisible[di];
-        p.noStroke(); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(13);
+        p.noStroke(); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(16);
         if (marker === 'high') { p.fill(65, 215, 128); p.text('4↑', pos.x + DSS/2, AZ.y + 14); }
         else                   { p.fill(215, 72, 72);  p.text('3↓', pos.x + DSS/2, AZ.y + 14); }
       }
@@ -3500,11 +3603,11 @@ new p5(p => {
     drawSpecialCard();
 
     // Player zone
-    p.fill(58, 188, 106); p.textAlign(p.LEFT, p.TOP); p.textSize(12); p.text(L.you, 16, PZ.y + 4);
+    p.fill(58, 188, 106); p.textAlign(p.LEFT, p.TOP); p.textSize(15); p.text(L.you, 16, PZ.y + 4);
     p.textSize(30); p.text(G.pScore + 'pt', 16, PZ.y + 18);
     const pi = sum(G.pIncome); let pY = PZ.y + 52;
-    if (pi > 0) { p.fill(46, 160, 84); p.textSize(11); p.text(L.incomeLabel(pi), 16, pY); pY += 14; }
-    p.fill(105, 115, 158); p.textSize(11); p.text(L.dicePerTurn(G.pPerTurn), 16, pY);
+    if (pi > 0) { p.fill(46, 160, 84); p.textSize(14); p.text(L.incomeLabel(pi), 16, pY); pY += 14; }
+    p.fill(105, 115, 158); p.textSize(14); p.text(L.dicePerTurn(G.pPerTurn), 16, pY);
     // デッキアイコンパネル（プレイヤー）
     if (G.pDeckCards) {
       const pUnused = G.pDeckCards.length - G.pDeckUsed.size;
@@ -3512,11 +3615,11 @@ new p5(p => {
       const pFlash  = G.deckResetFlash.p > 0;
       p.fill(pFlash?[215,178,50]:[32,42,72]); p.stroke(pFlash?[255,215,80]:[58,78,118]); p.strokeWeight(1.5);
       p.rect(16, pY+16, 42, 28, 5); p.noStroke();
-      p.fill(pFlash?[20,16,8]:[155,175,215]); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(pFlash?[20,16,8]:[155,175,215]); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
       p.text('📦'+pUnused, 37, pY+30);
       p.fill(28,22,48); p.stroke(68,52,98); p.strokeWeight(1.5);
       p.rect(62, pY+16, 42, 28, 5); p.noStroke();
-      p.fill(120,100,158); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+      p.fill(120,100,158); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
       p.text('🗑'+pUsed, 83, pY+30);
     }
     // アイテムスロット表示（右下・大型化）
@@ -3525,7 +3628,7 @@ new p5(p => {
       const iW=58, iH=52, iGap=6, iStartX=CW-16-(items.length*(iW+iGap)), iY=PZ.y+8;
       p.fill(18,24,48); p.stroke(48,64,102); p.strokeWeight(1);
       p.rect(iStartX-8,iY-4,items.length*(iW+iGap)+8,iH+8,8); p.noStroke();
-      p.fill(108,120,165); p.textSize(10); p.textAlign(p.LEFT,p.CENTER);
+      p.fill(108,120,165); p.textSize(13); p.textAlign(p.LEFT,p.CENTER);
       p.text(lang==='ja'?'アイテム':'Items', iStartX-6, iY-12);
       items.forEach((key,ii)=>{
         const ix=iStartX+ii*(iW+iGap);
@@ -3533,7 +3636,7 @@ new p5(p => {
         p.fill(hI?[52,68,108]:[30,42,72]); p.stroke(hI?[88,118,178]:[58,78,118]); p.strokeWeight(1.5);
         p.rect(ix,iY,iW,iH,6); p.noStroke();
         const nm=(L.draftItemNames&&L.draftItemNames[key]||key);
-        p.fill(hI?[225,235,255]:[175,188,225]); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(hI?[225,235,255]:[175,188,225]); p.textSize(15); p.textAlign(p.CENTER,p.CENTER);
         const nm1=nm.length>4?nm.slice(0,4):nm;
         const nm2=nm.length>4?nm.slice(4):'';
         p.text(nm1, ix+iW/2, iY+(nm2?iH/2-8:iH/2));
@@ -3555,7 +3658,7 @@ new p5(p => {
       p.rect(firstX - 6, AZ.y + 10, lastX - firstX + 12, DSS + 12, 8);
       p.noStroke();
       // 案内テキスト
-      p.fill(200, 168, 248); p.textSize(12); p.textAlign(p.CENTER, p.CENTER);
+      p.fill(200, 168, 248); p.textSize(15); p.textAlign(p.CENTER, p.CENTER);
       p.text(lang==='ja'?'▶ 相手のダイスを選択':'▶ Select opponent die', CW/2, AZ.y - 10);
     }
     // AIアイテムスロット（EXカード上・横並び）
@@ -3568,14 +3671,14 @@ new p5(p => {
       const aiSY = SC.y - aiIH - 20;
       p.fill(28,18,42,200); p.stroke(68,48,102); p.strokeWeight(1);
       p.rect(aiSX-6, aiSY-14, totalW+12, aiIH+18, 6); p.noStroke();
-      p.fill(128,95,168); p.textSize(9); p.textAlign(p.CENTER,p.TOP);
+      p.fill(128,95,168); p.textSize(12); p.textAlign(p.CENTER,p.TOP);
       p.text(lang==='ja'?'相手アイテム':'Opp Items', aiSX+totalW/2, aiSY-12);
       aiItems.forEach((key,ii)=>{
         const ax=aiSX+ii*(aiIW+aiIGap);
         p.fill(45,28,68); p.stroke(88,58,138); p.strokeWeight(1);
         p.rect(ax,aiSY,aiIW,aiIH,5); p.noStroke();
         const nm=(L.draftItemNames&&L.draftItemNames[key]||key);
-        p.fill(178,148,215); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(178,148,215); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
         const nm1=nm.length>3?nm.slice(0,3):nm, nm2=nm.length>3?nm.slice(3):'';
         p.text(nm1, ax+aiIW/2, aiSY+(nm2?aiIH/2-7:aiIH/2));
         if(nm2) p.text(nm2, ax+aiIW/2, aiSY+aiIH/2+7);
@@ -3583,11 +3686,11 @@ new p5(p => {
     }
     // Player NPC name + passiveスキルインジケーター
     if (RUN && RUN.playerNPC !== undefined) {
-      p.fill(95, 148, 105); p.textSize(10); p.textAlign(p.LEFT, p.TOP);
+      p.fill(95, 148, 105); p.textSize(13); p.textAlign(p.LEFT, p.TOP);
       p.text(L.partnerLabel(L.npcNames[RUN.playerNPC]), 16, pY + 50);
       // 扇灯のランタンの灯り（passive）インジケーター
       if (RUN.playerNPC === 1) {
-        p.fill(108,172,248,200); p.textSize(9); p.textAlign(p.LEFT,p.TOP);
+        p.fill(108,172,248,200); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
         p.text(lang==='ja'?'◉ ランタン有効':'◉ Lantern', 16, pY+64);
       }
     }
@@ -3597,7 +3700,7 @@ new p5(p => {
       G.market.forEach((c, i) => {
         const r = cRect(i);
         const aCount = G.aPool.filter(d => d.card === i).length; // AIの割当数
-        p.fill(108,172,248,200); p.noStroke(); p.textSize(13); p.textAlign(p.RIGHT,p.TOP);
+        p.fill(108,172,248,200); p.noStroke(); p.textSize(16); p.textAlign(p.RIGHT,p.TOP);
         p.text(`相手:${aCount}個`, r.x+r.w-6, r.y+6);
       });
     }
@@ -3611,7 +3714,7 @@ new p5(p => {
       else if (G.phase === 'SWAP_SELECT') { instrTxt = L.swapSelectInstr;  instrCol = [215, 165, 50];  }
       else if (G.selSet.size > 0)         { instrTxt = L.instrSel(G.selSet.size); instrCol = [255, 198, 42]; }
       else                                  instrTxt = L.instrNone;
-      p.fill(...instrCol); p.textAlign(p.CENTER, p.TOP); p.textSize(13); p.text(instrTxt, CW / 2 - 40, PZ.y + 6);
+      p.fill(...instrCol); p.textAlign(p.CENTER, p.TOP); p.textSize(16); p.text(instrTxt, CW / 2 - 40, PZ.y + 6);
     }
 
     // Player dice
@@ -3620,9 +3723,9 @@ new p5(p => {
     const pdl = pDiceLayout(freshD, keptD);
     pdl.keptBoxes.forEach(box => {
       p.noFill(); p.stroke(215, 172, 50); p.strokeWeight(1.5); p.rect(box.x, box.y, box.w, box.h, 9);
-      p.noStroke(); p.fill(215, 172, 50); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(11); p.text(L.keepFull(keptD.length), box.x + box.w / 2, box.y + 2);
+      p.noStroke(); p.fill(215, 172, 50); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(14); p.text(L.keepFull(keptD.length), box.x + box.w / 2, box.y + 2);
     });
-    if (pdl.overflow) { p.fill(212, 155, 50); p.textAlign(p.CENTER, p.TOP); p.textSize(12); p.text(`+${allUnass.length - D_MAXCOLS * 2}…`, CW / 2, PZ.y + 72 + (DS + D_GAP + 4) * 2); }
+    if (pdl.overflow) { p.fill(212, 155, 50); p.textAlign(p.CENTER, p.TOP); p.textSize(15); p.text(`+${allUnass.length - D_MAXCOLS * 2}…`, CW / 2, PZ.y + 72 + (DS + D_GAP + 4) * 2); }
     if (isDragging && dragS && dragE) { p.noFill(); p.stroke(255, 202, 38, 148); p.strokeWeight(1.5); p.rect(Math.min(dragS.x, dragE.x), Math.min(dragS.y, dragE.y), Math.abs(dragE.x - dragS.x), Math.abs(dragE.y - dragS.y)); }
 
     pdl.positions.forEach((pos, pi2) => {
@@ -3644,10 +3747,10 @@ new p5(p => {
       const bounceSc = isSwapAnimating ? (1 + swapPulse * 0.12) * sc : sc;
       drawDie(pos.x, pos.y, dv, DS, dieCol, G.selSet.has(idx) || hoverSwap, false, bounceSc, glowCol);
       if (pos.isKept) { p.noFill(); p.stroke(215, 172, 50); p.strokeWeight(2.5); p.rect(pos.x + 1, pos.y + 1, DS - 2, DS - 2, 7); p.noStroke(); }
-      if (isHighlighted && !isSwapAnimating) { p.fill(215, 178, 50, 180); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(10); p.text(d.val === 6 ? '★' : '▼', pos.x + DS / 2, pos.y - 2); }
+      if (isHighlighted && !isSwapAnimating) { p.fill(215, 178, 50, 180); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(13); p.text(d.val === 6 ? '★' : '▼', pos.x + DS / 2, pos.y - 2); }
       // 出目底上げインジケーター（緑の+1↑マーカー）
-      if (d.floored && d.rollF === 0) { p.noStroke(); p.fill(65, 215, 128, 220); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(12); p.text('+1↑', pos.x + DS / 2, pos.y - 2); }
-      if (hoverSwap) { p.noFill(); p.stroke(215, 142, 50); p.strokeWeight(2.5); p.rect(pos.x - 2, pos.y - 2, DS + 4, DS + 4, 9); p.noStroke(); p.fill(215, 165, 50, 200); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(12); p.text('⇄', pos.x + DS / 2, pos.y - 3); }
+      if (d.floored && d.rollF === 0) { p.noStroke(); p.fill(65, 215, 128, 220); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(15); p.text('+1↑', pos.x + DS / 2, pos.y - 2); }
+      if (hoverSwap) { p.noFill(); p.stroke(215, 142, 50); p.strokeWeight(2.5); p.rect(pos.x - 2, pos.y - 2, DS + 4, DS + 4, 9); p.noStroke(); p.fill(215, 165, 50, 200); p.textAlign(p.CENTER, p.BOTTOM); p.textSize(15); p.text('⇄', pos.x + DS / 2, pos.y - 3); }
     });
 
     // Effect anim overlay
@@ -3658,7 +3761,7 @@ new p5(p => {
         p.fill(215, 178, 50, prog * 255); p.textAlign(p.CENTER, p.CENTER); p.textSize(30);
         p.textFont('Mochiy Pop One, sans-serif'); p.text(msg, CW / 2, CH / 2 - 30 + i * 42); p.textFont('sans-serif');
       });
-      p.fill(175, 165, 130, prog * 180); p.textSize(14); p.textAlign(p.CENTER, p.CENTER); p.text(L.tapContinue, CW / 2, CH / 2 + 50);
+      p.fill(175, 165, 130, prog * 180); p.textSize(16); p.textAlign(p.CENTER, p.CENTER); p.text(L.tapContinue, CW / 2, CH / 2 + 50);
     }
 
     // Floating texts
@@ -3672,14 +3775,14 @@ new p5(p => {
     if (G.phase === 'ASSIGN') {
       const hC = hov(CW / 2 - 108, CH - 42, 216, 34);
       p.fill(hC ? [58, 148, 78] : [36, 108, 56]); p.rect(CW / 2 - 108, CH - 42, 216, 34, 9);
-      p.fill(202, 245, 215); p.textAlign(p.CENTER, p.CENTER); p.textSize(15); p.text(L.confirmBtn, CW / 2, CH - 25);
+      p.fill(202, 245, 215); p.textAlign(p.CENTER, p.CENTER); p.textSize(17); p.text(L.confirmBtn, CW / 2, CH - 25);
     }
     if (G.phase === 'TURN_END') {
       const isLast = G.turn >= G.totalTurns;
       const lbl = isLast ? L.stageEndBtn : L.nextBtn;
       const hN = hov(CW / 2 - 108, CH - 42, 216, 34);
       p.fill(hN ? [55, 95, 172] : [36, 65, 138]); p.rect(CW / 2 - 108, CH - 42, 216, 34, 9);
-      p.fill(202, 218, 255); p.textAlign(p.CENTER, p.CENTER); p.textSize(15); p.text(lbl, CW / 2, CH - 25);
+      p.fill(202, 218, 255); p.textAlign(p.CENTER, p.CENTER); p.textSize(17); p.text(lbl, CW / 2, CH - 25);
     }
     if (G.phase === 'TIEBREAK' && G.tb) drawTiebreak();
     if (G.phase === 'CARD_SELECT') drawCardSelectOverlay();
@@ -3691,7 +3794,7 @@ new p5(p => {
       p.fill(16,22,42); p.stroke(192,68,68); p.strokeWeight(2);
       p.rect(CW/2-240,CARD_Y-52,480,42,10); p.noStroke();
       p.textFont('Mochiy Pop One, sans-serif');
-      p.fill(255,168,168); p.textAlign(p.CENTER,p.CENTER); p.textSize(15);
+      p.fill(255,168,168); p.textAlign(p.CENTER,p.CENTER); p.textSize(17);
       p.text(lang==='ja'?'🚫 封鎖するカードをクリックしてください':'🚫 Click a card to blockade', CW/2, CARD_Y-31);
       p.textFont('sans-serif');
       // 各カードに🚫マーク＋枠
@@ -3710,7 +3813,7 @@ new p5(p => {
       p.fill(16,22,42); p.stroke(215,178,50); p.strokeWeight(2);
       p.rect(CW/2-220,PZ.y-50,440,42,10); p.noStroke();
       p.textFont('Mochiy Pop One, sans-serif');
-      p.fill(255,220,80); p.textAlign(p.CENTER,p.CENTER); p.textSize(15);
+      p.fill(255,220,80); p.textAlign(p.CENTER,p.CENTER); p.textSize(17);
       p.text(lang==='ja'?'★ 6にするダイスをクリックしてください':'★ Click a die to set to 6', CW/2, PZ.y-29);
       p.textFont('sans-serif');
     }
@@ -3722,7 +3825,7 @@ new p5(p => {
       p.fill(16,22,42); p.stroke(...col); p.strokeWeight(2);
       p.rect(CW/2-240,CARD_Y-52,480,42,10); p.noStroke();
       p.textFont('Mochiy Pop One, sans-serif');
-      p.fill(...col); p.textAlign(p.CENTER,p.CENTER); p.textSize(15);
+      p.fill(...col); p.textAlign(p.CENTER,p.CENTER); p.textSize(17);
       p.text((lang==='ja'?(isSeal?`${icon} 封印するカードをクリック`:`${icon} 強化するカードをクリック`):(isSeal?`${icon} Click card to seal`:`${icon} Click card to enhance`)), CW/2, CARD_Y-31);
       p.textFont('sans-serif');
       for (let i=0;i<G.market.length;i++) {
@@ -3753,9 +3856,17 @@ new p5(p => {
       const prog = Math.min(1, G.stageStartBanner / 30);
       const alpha = Math.min(255, G.stageStartBanner * 6);
       p.noStroke(); p.fill(16,22,42,alpha*0.85); p.rect(CW/2-240,CH/2-30,480,60,12);
-      p.fill(108,188,148,alpha); p.textAlign(p.CENTER,p.CENTER); p.textSize(14);
+      p.fill(108,188,148,alpha); p.textAlign(p.CENTER,p.CENTER); p.textSize(16);
       const npcName = RUN ? L.npcNames[RUN.playerNPC] : '';
       p.text(lang==='ja'?`✦ ステージ${RUN?RUN.currentStage:''}開始 — ${npcName}のスキルがリセットされました`:`✦ Stage ${RUN?RUN.currentStage:''} — ${npcName}'s skills reset`, CW/2, CH/2);
+    }
+    // 初回チュートリアルヒント（tutorialSeenで管理）
+    if (RUN && RUN.currentStage === 1 && G.turn === 1) {
+      if (['CARD_SELECT','ROLLING'].includes(G.phase) && !tutorialSeen.card_select) {
+        drawTutorialHint('card_select');
+      } else if (['ASSIGN','SWAP_SELECT'].includes(G.phase) && !tutorialSeen.assign && tutorialSeen.card_select) {
+        drawTutorialHint('assign');
+      }
     }
     if (helpOpen) drawHelp();
   }
@@ -3795,12 +3906,12 @@ new p5(p => {
     const used = who==='p' ? G.pDeckUsed  : G.aDeckUsed;
     const unusedCards = deck.map((c,i)=>({...c,idx:i})).filter(c=>!used.has(c.idx));
     const usedCards   = deck.map((c,i)=>({...c,idx:i})).filter(c=>used.has(c.idx));
-    const pw=640,ph=400,px=CW/2-pw/2,py=CH/2-ph/2;
+    const pw=720,ph=460,px=CW/2-pw/2,py=CH/2-ph/2;
     p.fill(0,0,0,155); p.noStroke(); p.rect(0,0,CW,CH);
     p.fill(14,18,32); p.stroke(58,82,138); p.strokeWeight(2);
     p.rect(px,py,pw,ph,14); p.noStroke();
     p.textFont('Mochiy Pop One, sans-serif');
-    p.fill(who==='p'?[65,188,128]:[182,85,85]); p.textAlign(p.CENTER,p.CENTER); p.textSize(16);
+    p.fill(who==='p'?[65,188,128]:[182,85,85]); p.textAlign(p.CENTER,p.CENTER); p.textSize(17);
     const deckTitle = L.deckPopupTitle+(who==='p'?'（自分）':'（相手）');
     // 扇灯ランタンラベル
     const showLantern = sentoPassive && who==='a';
@@ -3808,7 +3919,7 @@ new p5(p => {
     // 相手デッキで扇灯パッシブなし → カード名を隠す
     const hideNames = (who==='a' && !sentoPassive);
     // 未使用
-    p.fill(65,188,128); p.textSize(13); p.textAlign(p.LEFT,p.TOP);
+    p.fill(65,188,128); p.textSize(15); p.textAlign(p.LEFT,p.TOP);
     p.text(L.deckPopupUnused+'（'+unusedCards.length+'）', px+14, py+44);
     // U1: カード枠拡大・特別効果表示
     const cw=110, ch=60, gap=6, cols=Math.floor((pw-20)/(cw+gap));
@@ -3818,29 +3929,29 @@ new p5(p => {
       const tc=typeCol(c.type);
       p.fill(22,30,52); p.stroke(...tc); p.strokeWeight(1); p.rect(cx,cy,cw,ch,6); p.noStroke();
       if (hideNames) {
-        p.fill(65,75,105); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(65,75,105); p.textSize(15); p.textAlign(p.CENTER,p.CENTER);
         p.text('???', cx+cw/2, cy+ch/2);
       } else {
         // カード名（特別カードはspName優先）
         const _dpName = (c.isSpecial && c.spName) ? c.spName : (L.cardNames[c.key] || c.key || '---');
-        p.fill(c.isSpecial?[235,215,255]:[188,200,230]); p.textSize(c.isSpecial?10:11); p.textAlign(p.CENTER,p.TOP);
+        p.fill(c.isSpecial?[235,215,255]:[188,200,230]); p.textSize(c.isSpecial?12:13); p.textAlign(p.CENTER,p.TOP);
         p.text(_dpName, cx+cw/2, cy+5);
         // 効果
-        p.fill(...tc); p.textSize(10);
+        p.fill(...tc); p.textSize(12);
         const eff=c.type==='income'?L.cardEffect.income(c.val):c.type==='invest'?L.cardEffect.invest():L.cardEffect.instant(c.val);
         p.text(eff, cx+cw/2, cy+20);
         // 特別カード変化効果（名称＋目標値）
         if (c.effect && c.isSpecial) {
           const _dpEffName = (L.specialCardEffectNames && L.specialCardEffectNames[c.effect]) || c.effect;
           const _dpTgt = c.effect==='targetNum' && c.targetVal!=null ? '（'+c.targetVal+'）' : '';
-          p.fill(178,148,228); p.textSize(10); p.textAlign(p.CENTER,p.TOP);
+          p.fill(178,148,228); p.textSize(12); p.textAlign(p.CENTER,p.TOP);
           p.text('◆ '+_dpEffName+_dpTgt, cx+cw/2, cy+35);
         }
       }
     });
     // 使用済み
     const usedY = py+64+Math.ceil(unusedCards.length/cols)*(ch+gap)+12;
-    p.fill(128,100,158); p.textSize(13); p.textAlign(p.LEFT,p.TOP);
+    p.fill(128,100,158); p.textSize(15); p.textAlign(p.LEFT,p.TOP);
     p.text(L.deckPopupUsed+'（'+usedCards.length+'）', px+14, usedY);
     usedCards.forEach((c,i)=>{
       const col=i%cols,row=Math.floor(i/cols);
@@ -3848,20 +3959,20 @@ new p5(p => {
       if(cy+ch>py+ph-40) return;
       p.fill(22,22,38); p.stroke(55,48,78); p.strokeWeight(1); p.rect(cx,cy,cw,ch,6); p.noStroke();
       const _duName = (c.isSpecial && c.spName) ? c.spName : (L.cardNames[c.key] || c.key || '---');
-      p.fill(c.isSpecial?[180,155,200]:[100,95,128]); p.textSize(c.isSpecial?9:11); p.textAlign(p.CENTER,p.TOP);
+      p.fill(c.isSpecial?[180,155,200]:[100,95,128]); p.textSize(c.isSpecial?11:13); p.textAlign(p.CENTER,p.TOP);
       p.text(_duName, cx+cw/2, cy+5);
-      p.fill(85,80,110); p.textSize(10);
+      p.fill(85,80,110); p.textSize(12);
       const eff=c.type==='income'?L.cardEffect.income(c.val):c.type==='invest'?L.cardEffect.invest():L.cardEffect.instant(c.val);
       p.text(eff, cx+cw/2, cy+20);
       if (c.effect && c.isSpecial) {
         const _duEff = (L.specialCardEffectNames && L.specialCardEffectNames[c.effect]) || c.effect;
-        p.fill(140,115,175); p.textSize(9); p.text('◆ '+_duEff, cx+cw/2, cy+35);
+        p.fill(140,115,175); p.textSize(15); p.text('◆ '+_duEff, cx+cw/2, cy+35);
       }
     });
     const cbx=CW/2-60,cby=py+ph-44;
     const hC=hov(cbx,cby,120,34);
     p.fill(hC?[52,68,112]:[30,42,78]); p.rect(cbx,cby,120,34,8);
-    p.fill(175,188,225); p.textAlign(p.CENTER,p.CENTER); p.textSize(14);
+    p.fill(175,188,225); p.textAlign(p.CENTER,p.CENTER); p.textSize(15);
     p.text(L.deckPopupClose, CW/2, cby+17);
   }
 
@@ -3888,7 +3999,7 @@ new p5(p => {
     p.rect(panelX, panelY, btnW+8, panelH+8, 10);
     p.noStroke();
     // ラベル（パネル最上部）
-    p.fill(175,195,235); p.textFont('Mochiy Pop One, sans-serif'); p.textSize(11); p.textAlign(p.LEFT,p.TOP);
+    p.fill(175,195,235); p.textFont('Mochiy Pop One, sans-serif'); p.textSize(14); p.textAlign(p.LEFT,p.TOP);
     p.text((L.npcNames[npcIdx]||'')+' '+L.skillLabel, panelX+6, panelY+4);
     p.textFont('sans-serif');
 
@@ -3899,9 +4010,9 @@ new p5(p => {
       p.fill(18,30,22,220); p.stroke(40,110,65); p.strokeWeight(1);
       p.rect(r0.x, pry, btnW, passH, 5); p.noStroke();
       p.fill(0,160,70); p.rect(r0.x, pry, 5, passH, 3,0,0,3);
-      p.fill(hBp?[200,255,220]:[90,170,115]); p.textSize(11); p.textAlign(p.LEFT,p.CENTER);
+      p.fill(hBp?[200,255,220]:[90,170,115]); p.textSize(14); p.textAlign(p.LEFT,p.CENTER);
       p.text('P  '+(L[def.nameKey]||def.key), r0.x+10, pry+passH/2);
-      p.fill(55,130,75); p.textSize(9); p.textAlign(p.RIGHT,p.CENTER);
+      p.fill(55,130,75); p.textSize(12); p.textAlign(p.RIGHT,p.CENTER);
       p.text(lang==='ja'?'常時':'passive', r0.x+btnW-8, pry+passH/2);
     });
 
@@ -3926,19 +4037,19 @@ new p5(p => {
       p.fill(...tCol); p.rect(r.x, r.y, 5, r.h, 3,0,0,3);
 
       const skillName = L[def.nameKey] || def.key;
-      p.fill(usable?[220,225,255]:[95,102,138]); p.textSize(14); p.textAlign(p.LEFT,p.CENTER);
+      p.fill(usable?[220,225,255]:[95,102,138]); p.textSize(16); p.textAlign(p.LEFT,p.CENTER);
       p.text(skillName, r.x+12, r.y+r.h/2 - (def.type==='enhanced'?7:0));
 
       if (def.type === 'enhanced') {
         const hasPt = G.pScore >= def.cost;
-        p.fill(hasPt?[215,178,50]:[175,85,85]); p.textSize(11); p.textAlign(p.LEFT,p.CENTER);
+        p.fill(hasPt?[215,178,50]:[175,85,85]); p.textSize(14); p.textAlign(p.LEFT,p.CENTER);
         p.text(L.skillCostLabel(def.cost), r.x+12, r.y+r.h/2+8);
       }
       if (charges === 0) {
-        p.fill(82,88,115); p.textSize(11); p.textAlign(p.RIGHT,p.CENTER);
+        p.fill(82,88,115); p.textSize(14); p.textAlign(p.RIGHT,p.CENTER);
         p.text(L.skillUsed, r.x+r.w-10, r.y+r.h/2);
       } else if (charges > 0) {
-        p.fill(usable?[108,188,148]:[70,90,115]); p.textSize(11); p.textAlign(p.RIGHT,p.CENTER);
+        p.fill(usable?[108,188,148]:[70,90,115]); p.textSize(14); p.textAlign(p.RIGHT,p.CENTER);
         p.text(L.skillCharges(charges), r.x+r.w-10, r.y+r.h/2);
       }
     });
@@ -3952,7 +4063,7 @@ new p5(p => {
       if (msg) {
         const by = panelY + panelH + 12;
         p.noStroke(); p.fill(42,28,72,220); p.rect(panelX, by, btnW+8, 32, 8);
-        p.fill(200,168,248); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(200,168,248); p.textSize(14); p.textAlign(p.CENTER,p.CENTER);
         p.text(msg, panelX+(btnW+8)/2, by+16);
       }
     }
@@ -3977,17 +4088,17 @@ new p5(p => {
     const hasEffect = hovCard.effect && hovCard.isSpecial;
     const hasTarget = hasEffect && (hovCard.effect==='targetNum') && hovCard.targetVal!=null;
     const hasPtLine = hasEffect && (hovCard.effect==='ptBonus'||hovCard.effect==='oppPtMinus');
-    const pw = 240;
+    const pw = 260;
     // EXカードスロット用のph（specialDescsは長めなので動的に）
     const _exDesc = hovCard.isSpecialSlot ? (L.specialDescs&&L.specialDescs[hovCard.effectType]||'') : '';
-    const _exDescEst = _exDesc ? Math.max(2, Math.ceil(_exDesc.length/(lang==='ja'?14:26))) : 0;
-    const _exPh = 36 + _exDescEst*15 + 14;
+    const _exDescEst = _exDesc ? Math.max(3, Math.ceil(_exDesc.length/(lang==='ja'?12:18))) : 0;
+    const _exPh = 36 + _exDescEst*17 + 24;
     // 通常カードの変化効果用ph
     const _eDescRaw = hasEffect ? ((hovCard.effect&&L.specialCardEffectDescs&&L.specialCardEffectDescs[hovCard.effect])||'') : '';
     const _eDescLines = _eDescRaw ? _eDescRaw.split('\n').length : 0;
     const _baseY = hasTarget ? 102 : 82;
     const _contentEnd = _baseY + _eDescLines*15 + (hasPtLine ? 22 : 0) + 12;
-    const ph = hovCard.isSpecialSlot ? Math.max(100, _exPh) : (hasEffect ? Math.max(175, 58+_contentEnd) : 120);
+    const ph = hovCard.isSpecialSlot ? Math.max(170, _exPh) : (hasEffect ? Math.max(175, 58+_contentEnd) : 120);
     let px = hovR.x + hovR.w + 8;
     let py = hovR.y;
     if (px + pw > CW - 10) px = hovR.x - pw - 8;
@@ -3998,34 +4109,34 @@ new p5(p => {
 
     p.textFont('Mochiy Pop One, sans-serif');
     if (hovCard.isSpecialSlot) {
-      p.fill(200,148,255); p.textAlign(p.LEFT,p.TOP); p.textSize(15);
+      p.fill(200,148,255); p.textAlign(p.LEFT,p.TOP); p.textSize(16);
       p.text(L.specialNames[hovCard.effectType]||hovCard.effectType, px+10, py+12);
       p.textFont('sans-serif');
-      p.fill(168,128,215); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
-      _wrapText(L.specialDescs[hovCard.effectType]||'', px+10, py+36, pw-20, 15, _exDescEst+2);
+      p.fill(168,128,215); p.textSize(15); p.textAlign(p.LEFT,p.TOP);
+      _wrapText(L.specialDescs[hovCard.effectType]||'', px+10, py+36, pw-20, 17, _exDescEst+2);
     } else {
       const tc = typeCol(hovCard.type);
       const _hcName = (hovCard.isSpecial && hovCard.spName) ? hovCard.spName : (L.cardNames[hovCard.key]||hovCard.key);
-      p.fill(...tc); p.textAlign(p.LEFT,p.TOP); p.textSize(15);
+      p.fill(...tc); p.textAlign(p.LEFT,p.TOP); p.textSize(16);
       p.text(_hcName, px+10, py+12);
       p.textFont('sans-serif');
       const effStr = hovCard.type==='income'?L.cardEffect.income(hovCard.val):
                      hovCard.type==='invest'?L.cardEffect.invest():
                      L.cardEffect.instant(hovCard.val);
-      p.fill(175,188,225); p.textSize(13); p.textAlign(p.LEFT,p.TOP);
+      p.fill(175,188,225); p.textSize(16); p.textAlign(p.LEFT,p.TOP);
       p.text(effStr, px+10, py+35);
       // 変化効果（左寄せ・drawMultilineTextをLEFT ALIGNで）
       if (hasEffect) {
         const eName = (L.specialCardEffectNames&&L.specialCardEffectNames[hovCard.effect])||hovCard.effect;
         const eDesc = (L.specialCardEffectDescs&&L.specialCardEffectDescs[hovCard.effect])||'';
         p.noStroke(); p.fill(32,22,52); p.rect(px+8, py+58, pw-16, hasTarget?78:62, 6);
-        p.fill(178,148,228); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
+        p.fill(178,148,228); p.textSize(15); p.textAlign(p.LEFT,p.TOP);
         p.text('◆ '+eName, px+14, py+64);
         if (hasTarget) {
-          p.fill(215,178,50); p.textSize(13);
+          p.fill(215,178,50); p.textSize(16);
           p.text((lang==='ja'?'目標値: ':'Target: ')+hovCard.targetVal, px+14, py+82);
         }
-        p.fill(155,128,200); p.textSize(11); p.textAlign(p.LEFT,p.TOP);
+        p.fill(155,128,200); p.textSize(14); p.textAlign(p.LEFT,p.TOP);
         // \nで分割して左寄せ描画
         (eDesc||'').split('\n').forEach((line,li)=>{
           p.text(line, px+14, py+(hasTarget?102:82)+li*15, pw-28, 30);
@@ -4036,14 +4147,14 @@ new p5(p => {
           const ptTxt = hovCard.effect==='ptBonus'
             ? (lang==='ja'?'数値: ＋20pt':'+20pt')
             : (lang==='ja'?'数値: 相手－15pt':'–15pt to opponent');
-          p.fill(215,190,255); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
+          p.fill(215,190,255); p.textSize(15); p.textAlign(p.LEFT,p.TOP);
           p.text(ptTxt, px+14, _ptY);
         }
       }
       // オーナー
       const owner = hovCard.owner==='p'?L.you:L.opp;
       const oc = hovCard.owner==='p'?[52,192,108]:[182,85,85];
-      p.fill(...oc,180); p.textSize(10); p.textAlign(p.RIGHT,p.BOTTOM);
+      p.fill(...oc,180); p.textSize(14); p.textAlign(p.RIGHT,p.BOTTOM);
       p.text(owner+(lang==='ja'?'のカード':"'s card"), px+pw-8, py+ph-6);
     }
   }
@@ -4198,7 +4309,6 @@ new p5(p => {
     drawSceneBg('bg_draft', 0.10);
     drawBackBtn(); drawHelpBtn();
     if (helpOpen) { drawHelp(); return; }
-
     const ds = DS_STATE;
     const isTagPhase  = ds.phase === 'TAG_SELECT';
     const isBidPhase  = ds.phase === 'BID_SELECT';
@@ -4221,7 +4331,7 @@ new p5(p => {
     // フェーズ
     const phaseTxt = isTagPhase ? L.draftTagSelectTitle : isBidPhase ? L.draftBidPhaseTitle : '';
     if (phaseTxt) {
-      p.fill(175,185,220); p.textSize(10); p.textAlign(p.LEFT,p.TOP);
+      p.fill(175,185,220); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
       // 長い文字列は折り返して表示
       const phLines = phaseTxt.split(/(.{10})/g).filter(Boolean);
       phLines.forEach((l,i)=>p.text(l,8,30+i*14));
@@ -4238,15 +4348,15 @@ new p5(p => {
       const remTags = ds.playerTags.filter(t=>!t.used);
       const pNpcName = RUN && RUN.playerNPC !== undefined ? L.npcNames[RUN.playerNPC] : '';
       // ラベル：「あなた（茶々）のタグ」
-      p.fill(65,188,128); p.textSize(10); p.textAlign(p.LEFT,p.TOP);
+      p.fill(65,188,128); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
       p.text(lang==='ja'?`あなた（${pNpcName}）`:`You (${pNpcName})`, 8, 92);
-      p.fill(148,162,205); p.textSize(9); p.text(lang==='ja'?'のタグ残り:':'tags left:', 8, 103);
+      p.fill(148,162,205); p.textSize(13); p.text(lang==='ja'?'のタグ残り:':'tags left:', 8, 103);
       remTags.forEach((t,ti)=>{
         const col=ti%2, row=Math.floor(ti/2);
         const tx=8+col*58, ty=116+row*24;
         const tc=t.mult>=2?[168,88,218]:[58,108,195];
         p.fill(...tc); p.rect(tx,ty,52,18,4);
-        p.fill(230,240,255); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(230,240,255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
         p.text(t.mult>=2?'×2.0':'×1.5', tx+26, ty+9);
       });
 
@@ -4259,15 +4369,15 @@ new p5(p => {
       const aiNpcName = RUN && RUN.aiNPC !== undefined ? L.npcNames[RUN.aiNPC] : '';
       const aiCharName = L.aiCharNames ? L.aiCharNames[CFG.aiChar] : '';
       const aiY0 = sepY + 18;
-      p.fill(182,85,85); p.textSize(10); p.textAlign(p.LEFT,p.TOP);
+      p.fill(182,85,85); p.textSize(12); p.textAlign(p.LEFT,p.TOP);
       p.text(lang==='ja'?`相手（${aiNpcName}）`:`Opp (${aiNpcName})`, 8, aiY0);
-      p.fill(148,90,210); p.textSize(9); p.text(lang==='ja'?'のタグ残り:':'tags left:', 8, aiY0+11);
+      p.fill(148,90,210); p.textSize(13); p.text(lang==='ja'?'のタグ残り:':'tags left:', 8, aiY0+11);
       allAITags.forEach((t,ti)=>{
         const col=ti%2, row=Math.floor(ti/2);
         const tx=8+col*58, ty=aiY0+24+row*24;
         const tc=t.mult>=2?[118,38,188]:[28,68,155];
         p.fill(...tc); p.rect(tx,ty,52,18,4);
-        p.fill(215,225,255); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(215,225,255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
         p.text(t.mult>=2?'A×2.0':'A×1.5', tx+26, ty+9);
       });
     }
@@ -4303,7 +4413,7 @@ new p5(p => {
       p.text(slot.name(), r.x+DRAFT_SLOT_W/2, r.y+32); p.textFont('sans-serif');
 
       // 説明文（\n対応・手動multiline）
-      p.fill(185,198,235); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
+      p.fill(185,198,235); p.textSize(13); p.textAlign(p.CENTER,p.TOP);
       drawMultilineText(slot.desc(), r.x+DRAFT_SLOT_W/2, r.y+55, 18);
 
       // 追加情報（種別固有の効果表示）
@@ -4319,9 +4429,9 @@ new p5(p => {
         if(slot.card.effect){
           const effName = (L.specialCardEffectNames&&L.specialCardEffectNames[slot.card.effect])||slot.card.effect;
           const effDesc = (L.specialCardEffectDescs&&L.specialCardEffectDescs[slot.card.effect])||'';
-          p.fill(178,148,228); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
+          p.fill(178,148,228); p.textSize(13); p.textAlign(p.CENTER,p.TOP);
           p.text('◆ '+effName, r.x+DRAFT_SLOT_W/2, r.y+112);
-          p.fill(158,135,205); p.textSize(10); p.textAlign(p.CENTER,p.TOP);
+          p.fill(158,135,205); p.textSize(12); p.textAlign(p.CENTER,p.TOP);
           drawMultilineText(effDesc, r.x+DRAFT_SLOT_W/2, r.y+126, 14);
         }
       }
@@ -4341,10 +4451,10 @@ new p5(p => {
         p.fill(isBidPhase?[215,220,248]:[108,120,158]); p.textSize(22); p.textAlign(p.CENTER,p.CENTER);
         p.text(bid, r.x+DRAFT_SLOT_W/2, bY+btnH/2);
         if(pMult){
-          p.fill(pMult>=2?[200,140,255]:[140,180,255]); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+          p.fill(pMult>=2?[200,140,255]:[140,180,255]); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
           p.text('→ '+effBid+'pt (×'+pMult+')', r.x+DRAFT_SLOT_W/2, bidY+42);
         } else {
-          p.fill(58,70,105); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+          p.fill(58,70,105); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
           p.text(L.draftBidLabel, r.x+DRAFT_SLOT_W/2, bidY+42);
         }
       } else {
@@ -4357,7 +4467,7 @@ new p5(p => {
           const wc=winner==='p'?[52,192,108]:[192,68,68];
           const wl=winner==='p'?L.draftWonLabel:L.draftLostLabel;
           p.fill(...wc); p.rect(r.x+DRAFT_SLOT_W-62,r.y+34,56,20,6);
-          p.fill(255); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+          p.fill(255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
           p.text(wl, r.x+DRAFT_SLOT_W-34, r.y+44);
         }
       }
@@ -4370,19 +4480,19 @@ new p5(p => {
       p.stroke(hasPTag?(pMult>=2?[200,120,255]:[90,150,255]):[48,62,100]); p.strokeWeight(hasPTag?2:1);
       p.rect(pbr.x,pbr.y,pbr.w,pbr.h,4); p.noStroke();
       p.fill(hasPTag?[235,248,255]:(canAssign&&isTagPhase?[155,175,215]:[55,65,90]));
-      p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+      p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
       p.text(hasPTag?'P×'+pMult:(canAssign&&isTagPhase?'タグ':'−'), pbr.x+pbr.w/2, pbr.y+pbr.h/2);
 
       // AIタグ：BID_SELECT以降のみ割当先を表示、TAG_SELECTは枚数のみ
       const abr=draftTagBtnRect(i,'a');
       if(showAISlot&&aMult){
         p.fill(aMult>=2?[118,38,188]:[28,68,155]); p.rect(abr.x,abr.y,abr.w,abr.h,4);
-        p.fill(215,225,255); p.textSize(11); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(215,225,255); p.textSize(13); p.textAlign(p.CENTER,p.CENTER);
         p.text('A×'+aMult, abr.x+abr.w/2, abr.y+abr.h/2);
       } else {
         p.fill(22,28,52); p.stroke(42,52,82); p.strokeWeight(1);
         p.rect(abr.x,abr.y,abr.w,abr.h,4); p.noStroke();
-        p.fill(55,65,90); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
+        p.fill(55,65,90); p.textSize(12); p.textAlign(p.CENTER,p.CENTER);
         p.text('A:−', abr.x+abr.w/2, abr.y+abr.h/2);
       }
     });
@@ -4469,8 +4579,9 @@ new p5(p => {
       else{ct.revF=(ct.revF||0)+1;if(ct.revF===20)ct.showResult=true;if(ct.revF===36)ct.showBtn=true;}
     }
 
-    p.fill(58,72,105); p.textSize(11); p.textAlign(p.RIGHT,p.BOTTOM); p.text(L.version,CW-12,CH-8);
+    p.fill(58,72,105); p.textSize(13); p.textAlign(p.RIGHT,p.BOTTOM); p.text(L.version,CW-12,CH-8);
     drawBackBtn();
+    if (!tutorialSeen.draft) drawTutorialHint('draft');
   }
 
   function drawStageResult() {
@@ -4672,11 +4783,27 @@ new p5(p => {
   };
 
   p.mouseReleased = function () {
-    // ── チュートリアルヒントの閉じるボタン ──
-    if (!tutorialShown && scene === 'GAME' && G.phase === 'ASSIGN' && G.turn === 1 && RUN && RUN.currentStage === 1) {
-      const _tw=320, _th=4*52+24, _tx=16, _ty=(CH-_th)/2-20;
-      const _bx=_tx+_tw-72, _by2=_ty+_th-32;
-      if (hov(_bx, _by2, 64, 24)) { tutorialShown=true; return; }
+    // ── チュートリアル「確認」ボタン判定（全シーン共通） ──
+    {
+      const _tutPhase =
+        (!tutorialSeen.config && scene==='CONFIG') ? 'config' :
+        (!tutorialSeen.npc    && scene==='NPC_SELECT') ? 'npc' :
+        (!tutorialSeen.draft  && scene==='DRAFT') ? 'draft' :
+        (!tutorialSeen.card_select && scene==='GAME' && ['CARD_SELECT','ROLLING'].includes(G.phase)) ? 'card_select' :
+        (!tutorialSeen.assign && scene==='GAME' && tutorialSeen.card_select && ['ASSIGN','SWAP_SELECT'].includes(G.phase)) ? 'assign' :
+        null;
+      if (_tutPhase) {
+        const _tdata = TUTORIAL_DATA[_tutPhase];
+        if (_tdata) {
+          const _items = (lang==='ja'?_tdata.ja:_tdata.en).items;
+          const _th = _items.length * 96 + 112;
+          const _btnY = Math.max(8, CH/2 - _th/2) + _th - 66;
+          if (hov(CW/2-100, _btnY, 200, 48)) {
+            tutorialSeen[_tutPhase] = true;
+            return;
+          }
+        }
+      }
     }
     // ── Help overlay ──
     if (helpOpen) {
@@ -5185,8 +5312,8 @@ new p5(p => {
         if (va === 'top') cy = ay + sz / 2; else if (va === 'bottom') cy = ay - sz / 2;
         this.words.push({ txt, ax, ay, cx, cy, x: cx, y: cy, ha, va, sz, col, font: font || 'sans', hitR: Math.max(28, tw / 2 + 4), vx: 0, vy: 0, va2: 0, angle: 0, alive: true });
       };
-      addW('日本語', 18, 22, 'left', 'center', 14, lang === 'ja' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
-      addW('English', 18, 50, 'left', 'center', 14, lang === 'en' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
+      addW('日本語', 18, 22, 'left', 'center', 17, lang === 'ja' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
+      addW('English', 18, 54, 'left', 'center', 17, lang === 'en' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
       // タイトルはFredoka One・ゴールド・72px・y=170（現行タイトル画面に合わせる）
       const tw = this._mw(L.gameTitle, 72, 'fredoka'); this.titleHitW = Math.max(tw + 60, 500);
       addW(L.gameTitle, CW / 2, 170, 'center', 'center', 72, [245, 200, 66], 'fredoka');
