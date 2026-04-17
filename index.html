@@ -127,7 +127,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.50g',
+      gameTitle: 'ダイスオークション', version: 'v0.50i',
 
       // ── Title screen ──
       titleSummary: [
@@ -392,7 +392,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.50g',
+      gameTitle: 'Dice Auction', version: 'v0.50i',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -2833,6 +2833,15 @@ new p5(p => {
       p.textFont('Fredoka One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(24); p.text(L.startBtn, CW / 2, CH - 86); p.textFont('sans-serif'); p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
     } else {
       [{ k: 'ja', x: 16, w: 66 }, { k: 'en', x: 16, w: 64 }].forEach((lv, i) => { if (lang === lv.k) { p.noStroke(); p.fill(215, 178, 48); p.rect(lv.x, 32 + i * 28, lv.w, 2); } });
+      // サマリー帯（通常タイトルと同じ）
+      const _egSumLines = L.titleSummary.length;
+      const _egSumY = 435;
+      p.noStroke(); p.fill(10, 8, 20, 170);
+      p.rect(CW/2-420, _egSumY-16, 840, _egSumLines*28+24, 8);
+      p.stroke(180,140,40,80); p.strokeWeight(1);
+      p.line(CW/2-380, _egSumY-16, CW/2+380, _egSumY-16);
+      p.line(CW/2-380, _egSumY+_egSumLines*28+8, CW/2+380, _egSumY+_egSumLines*28+8);
+      p.noStroke();
       EGG.drawWords(); EGG.drawParticles(); EGG.drawDice(); EGG.drawThankYou();
     }
   }
@@ -5077,7 +5086,7 @@ new p5(p => {
     SPAWN: [{ x: 160, y: 575 }, { x: 1120, y: 575 }],
     glow: 0, thankYou: false, tyAlpha: 0, tyScale: 0, particles: [], titleHitW: 700,
     reset() { this.words = []; this.dice = []; this.heldIdx = -1; this.thankYou = false; this.tyAlpha = 0; this.tyScale = 0; this.particles = []; this.glow = 0; },
-    _mw(txt, sz, font) { p.push(); p.textFont(font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : 'sans-serif'); p.textSize(sz); const tw = p.textWidth(txt); p.pop(); return tw; },
+    _mw(txt, sz, font) { p.push(); p.textFont(font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : font === 'fredoka' ? 'Fredoka One, sans-serif' : 'sans-serif'); p.textSize(sz); const tw = p.textWidth(txt); p.pop(); return tw; },
     buildWords() {
       this.words = [];
       const addW = (txt, ax, ay, ha, va, sz, col, font) => {
@@ -5088,10 +5097,13 @@ new p5(p => {
       };
       addW('日本語', 18, 22, 'left', 'center', 14, lang === 'ja' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
       addW('English', 18, 50, 'left', 'center', 14, lang === 'en' ? [215, 178, 48] : [88, 96, 128], 'mochiy');
-      const tw = this._mw(L.gameTitle, 64, 'mochiy'); this.titleHitW = Math.max(tw + 60, 400);
-      addW(L.gameTitle, CW / 2, 160, 'center', 'center', 64, [52, 192, 108], 'mochiy');
-      L.titleSummary.forEach((line, i) => addW(line, CW / 2, 250 + i * 32, 'center', 'center', 17, [165, 175, 210], 'sans'));
-      addW(L.startBtn, CW / 2, 380, 'center', 'center', 22, [205, 248, 218], 'mochiy');
+      // タイトルはFredoka One・ゴールド・72px・y=170（現行タイトル画面に合わせる）
+      const tw = this._mw(L.gameTitle, 72, 'fredoka'); this.titleHitW = Math.max(tw + 60, 500);
+      addW(L.gameTitle, CW / 2, 170, 'center', 'center', 72, [245, 200, 66], 'fredoka');
+      // サマリーはy=455（現行に合わせる）
+      L.titleSummary.forEach((line, i) => addW(line, CW / 2, 455 + i * 28, 'center', 'center', 16, [195, 210, 240], 'sans'));
+      // スタートボタンはFredoka One・y=CH-86（現行に合わせる）
+      addW(L.startBtn, CW / 2, CH - 86, 'center', 'center', 24, [205, 248, 218], 'fredoka');
       addW(L.version, CW - 12, CH - 8, 'right', 'bottom', 11, [58, 72, 105], 'sans');
       addW(L.eggPull, CW / 2, CH - 18, 'center', 'center', 14, [165, 130, 50], 'sans');
     },
@@ -5136,13 +5148,30 @@ new p5(p => {
       this.words.forEach(w => {
         p.push(); p.noStroke();
         if (w.alive) {
+          // タイトル文字（fredoka・大サイズ）はグラデーション＋グロー
+          if (w.font === 'fredoka' && w.sz >= 60) {
+            p.textAlign(p.CENTER, p.CENTER);
+            p.textSize(w.sz); p.textFont('Fredoka One, sans-serif');
+            const _eg = p.drawingContext.createLinearGradient(w.ax-300, w.ay-40, w.ax+300, w.ay+40);
+            _eg.addColorStop(0.0, '#f5c842');
+            _eg.addColorStop(0.4, '#fff8e1');
+            _eg.addColorStop(0.7, '#f0b429');
+            _eg.addColorStop(1.0, '#e8a020');
+            p.drawingContext.fillStyle = _eg;
+            p.drawingContext.shadowColor = 'rgba(240,160,30,0.6)';
+            p.drawingContext.shadowBlur = 18;
+            p.drawingContext.fillText(w.txt, w.ax, w.ay);
+            p.drawingContext.shadowBlur = 0;
+            p.drawingContext.fillStyle = '#000';
+            p.textFont('sans-serif'); p.pop(); return;
+          }
           p.fill(w.col[0], w.col[1], w.col[2]);
           p.textAlign(w.ha === 'left' ? p.LEFT : w.ha === 'right' ? p.RIGHT : p.CENTER, w.va === 'top' ? p.TOP : w.va === 'bottom' ? p.BOTTOM : p.CENTER);
-          p.textSize(w.sz); p.textFont(w.font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : 'sans-serif');
+          p.textSize(w.sz); p.textFont(w.font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : w.font === 'fredoka' ? 'Fredoka One, sans-serif' : 'sans-serif');
           p.text(w.txt, w.ax, w.ay); p.textFont('sans-serif');
         } else {
           p.translate(w.x, w.y); p.rotate(w.angle); p.fill(w.col[0], w.col[1], w.col[2], 100);
-          p.textAlign(p.CENTER, p.CENTER); p.textSize(w.sz); p.textFont(w.font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : 'sans-serif');
+          p.textAlign(p.CENTER, p.CENTER); p.textSize(w.sz); p.textFont(w.font === 'mochiy' ? 'Mochiy Pop One, sans-serif' : w.font === 'fredoka' ? 'Fredoka One, sans-serif' : 'sans-serif');
           p.text(w.txt, 0, 0); p.textFont('sans-serif');
         }
         p.pop();
