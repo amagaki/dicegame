@@ -68,6 +68,49 @@ new p5(p => {
 // SECTION 1: CONSTANTS & CONFIG
 // ══════════════════════════════════════════════════════════════
 
+  // ── UI Color Constants (D-1) ──────────────────────────────
+  const COL = {
+    // プレイヤー / AI
+    P_GREEN:    [52,  192, 108],   // プレイヤーカラー（緑）
+    P_GREEN_LT: [205, 248, 218],   // プレイヤーカラー（薄緑）テキスト等
+    P_GREEN_MD: [65,  188, 128],   // プレイヤーカラー（中緑）
+    A_RED:      [182, 85,  85 ],   // AIカラー（赤）
+    A_RED_MD:   [180, 86,  86 ],   // AIカラー（赤 中）
+
+    // テキスト
+    TEXT_MAIN:  [175, 185, 218],   // メインテキスト（薄青白）
+    TEXT_SUB:   [202, 218, 255],   // サブテキスト（水色）
+    TEXT_MUTED: [58,  72,  105],   // ミュートテキスト（暗青）
+
+    // アクセント
+    GOLD:       [215, 178, 50 ],   // ゴールド（賭け宣言・ドラフト等）
+    GOLD_KEPT:  [215, 172, 50 ],   // ゴールド（キープ枠）
+    SKILL:      [178, 148, 228],   // スキルパープル
+    SKILL_GOLD: [215, 178, 50 ],   // スキルゴールド（コスト等）
+
+    // パネル背景
+    BG_PANEL:   [14,  18,  32 ],   // パネル背景（濃紺）
+    BG_DEEP:    [16,  22,  42 ],   // パネル背景（深紺）
+    BG_CARD:    [22,  30,  52 ],   // カード背景
+  };
+
+
+  // ── Card UI Layout Constants (D-2) ───────────────────────
+  const CARD_UI = {
+    ICON_Y:    44,   // アイコンY（r.y + ICON_Y）
+    NAME_Y:    84,   // カード名Y
+    EFF_Y:     106,  // 効果テキストY
+    BY_OFF:    152,  // 入札エリア上端 (r.y + BY_OFF)
+    BY_H:      76,   // 入札エリア高さ
+    YOU_Y:     19,   // 「あなた」行 (by + YOU_Y)
+    OPP_Y:     52,   // 「相手」行 (by + OPP_Y)
+    INNER_X:   6,    // 内側左マージン
+    INNER_R:   10,   // 内側右マージン（r.w - INNER_R）
+    LABEL_X:   12,   // ラベルX (r.x + LABEL_X)
+    WINNER_Y:  32,   // 勝者バッジ下オフセット（r.y+r.h - WINNER_Y）
+  };
+
+
   const CW = 1280, CH = 720;
 
   // ── Zone geometry ──
@@ -127,7 +170,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.50i',
+      gameTitle: 'ダイスオークション', version: 'v0.54',
 
       // ── Title screen ──
       titleSummary: [
@@ -392,7 +435,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.50i',
+      gameTitle: 'Dice Auction', version: 'v0.54',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -951,7 +994,7 @@ new p5(p => {
           addFloating(lang==='ja'?'◆ダイス+1！':'◆+1 Die!', FLOAT_POS.P_X, FLOAT_POS.P_Y, [78,132,218], 28);
         } else if (c.owner === 'a') {
           G.aPool.push({ val: rng(1,6), fresh: true });
-          addFloating(lang==='ja'?'相手◆ダイス+1':'Opp◆+1 Die', FLOAT_POS.A_X||640, FLOAT_POS.A_Y||50, [218,108,78], 24);
+          addFloating(lang==='ja'?'相手◆ダイス+1':'Opp◆+1 Die', FLOAT_POS.AI_X, FLOAT_POS.AI_Y, [218,108,78], 24);
         }
       }
     });
@@ -1311,6 +1354,7 @@ new p5(p => {
     }
     // ASSIGNフェーズでも残存rollF/bounceF処理（臨時ダイスアニメーション対応）
     if (G.phase === 'ASSIGN' || G.phase === 'SWAP_SELECT') {
+    updateBidCaches(); // Rendererのために事前計算
       G.pDice.forEach(d => {
         if (d.rollF > 0) { d.rollF--; if (d.rollF === 0) d.bounceF = 12; }
         else if (d.bounceF > 0) d.bounceF--;
@@ -1401,6 +1445,16 @@ new p5(p => {
     return sum(assigned.map(d=>d.val));
   }
 
+  // ── v0.53: キャッシュ更新（Renderer→System分離）──
+  // Renderer が計算しないよう、ASSIGN/REVEAL前に一括で事前計算
+  function updateBidCaches() {
+    if (!G.market) return;
+    G.market.forEach((card, i) => {
+      card.pBidCache = pBidFor(i);
+      card.aCountCache = G.aPool ? G.aPool.filter(d => d.card === i).length : 0;
+    });
+  }
+
   // 目標値ベースの勝敗判定（targetVal持ちカード用）
   function targetWinner(pBid, aBid, targetVal) {
     const pd = Math.abs(pBid - targetVal);
@@ -1482,7 +1536,8 @@ new p5(p => {
   // aiEstimatePlayerBids: プレイヤーの推定入札値を返す
   // 使用する情報: 評価値の比率・プレイヤーのダイス数（UI上で観察可能）
   function aiEstimatePlayerBids(evals) {
-    const pDiceCount = G.pDice.length;           // 観察可能：相手のダイス数
+    // CARD_SELECT中はpDiceがまだ配られていないのでperTurnで代替
+    const pDiceCount = G.pDice.length > 0 ? G.pDice.length : (G.pPerTurn||3);
     const pAvgVal    = 3.5;                      // 期待値（実際の出目は非公開）
     const total      = sum(evals) || 1;
     return evals.map(v => (v / total) * pDiceCount * pAvgVal);
@@ -1508,6 +1563,9 @@ new p5(p => {
     });
   }
 
+// ══════════════════════════════════════════════════════════════
+// SECTION 5b: AI SYSTEM
+// ══════════════════════════════════════════════════════════════
   function aiDecide() {
     // v0.40: NPCスキル使用判断（プレイヤーと同じタイミング）
     aiUseNPCSkills();
@@ -1703,6 +1761,7 @@ new p5(p => {
   }
 
   function resolveAll() {
+    updateBidCaches(); // 確定前に最新値でキャッシュ更新
     G.market.forEach((c, i) => { c.pBid = pBidFor(i); });
     if (G.specialCard) G.specialCard.pBid = pSpBid();
     // aiDecideはASSIGN開始時に呼んでいる。未呼び出しの場合のみここで呼ぶ
@@ -1783,7 +1842,7 @@ new p5(p => {
     if (who === 'p' && mult > 0) {
       if (card.effect === 'ptBonus')    { G.pScore += 20; addFloating(lang==='ja'?'◆+20pt':'◆+20pt', FLOAT_POS.P_X, FLOAT_POS.P_Y-40, [178,148,228], 28); }
       if (card.effect === 'oppPtMinus') { G.aScore = Math.max(0, G.aScore-15); addFloating(lang==='ja'?'◆相手-15pt':'◆Opp-15pt', FLOAT_POS.AI_X, FLOAT_POS.AI_Y, [192,68,68], 28); }
-      if (card.effect === 'diceAdd')    { G.pDice.push({ val:rng(1,6), fresh:true, card:null, rollF:0, bounceF:0, transient:true }); addFloating(lang==='ja'?'◆ダイス+1！':'◆+1 Die!', FLOAT_POS.P_X, FLOAT_POS.P_Y-40, [78,132,218], 28); }
+      // diceAdd: confirmCardSelectのPhase7で処理済み（二重実行防止）
     }
     // AI版ptBonus/oppPtMinus
     if (who === 'a' && mult > 0) {
@@ -1823,6 +1882,8 @@ new p5(p => {
         else G.pendingEffects.push({ type: eff, owner: w });
       }
     }
+    // transientダイス（diceAdd等）の未割当分を除去（念のためfinishTurnでも）
+    G.pDice = G.pDice.filter(d => !(d.transient && d.card === null));
     G.pScore += sum(G.pIncome); G.aScore += sum(G.aIncome);
     if (selfMultOwner === 'p') {
       const before = G.pScore; G.pScore = Math.floor(G.pScore * 1.2);
@@ -2602,12 +2663,12 @@ new p5(p => {
           {name:'Sento (Fennec)',col:[58,148,218],skills:[
             {n:'Lantern Light',t:'Passive',c:null,d:'When you open the deck popup, you can see the names of opponent\'s unused cards. Helps you read their strategy.'},
             {n:'Piercing Eyes',t:'3/stage',c:null,d:'Reveals whether each opponent die is ≤3 (low) or ≥4 (high). Exact values are hidden, but you get a read on their power.'},
-            {n:'Assign Vision',t:'1/stage',c:20,d:'After opponent confirms their assignment but before you confirm,\nall opponent assignments are fully revealed.\nLets you counter-assign with perfect information.'},
+            {n:'Assign Vision',t:'1/stage',c:15,d:'After opponent confirms their assignment but before you confirm,\nall opponent assignments are fully revealed.\nLets you counter-assign with perfect information.'},
           ]},
           {name:'Fukuya (Owl)',col:[108,148,228],skills:[
             {n:'Tie Lock',t:'2/stage',c:null,d:'Designate 1 card: both players cannot assign to it,\nforcing an automatic tiebreak dice roll for that card.\nEffective against cards the opponent is heavily investing in.'},
             {n:'Tie Boost',t:'3/stage',c:null,d:'Declare before assigning: if a tiebreak occurs this turn,\nyou roll 4 dice vs opponent\'s 3.\nRequires prior declaration.'},
-            {n:'D20 Gambit',t:'1/stage',c:15,d:'Pick 1 card and roll a D20 (1-20).\nThat value is instantly locked as your bid for that card.\nMaximum potential of 20.'},
+            {n:'D20 Gambit',t:'1/stage',c:12,d:'Pick 1 card and roll a D20 (1-20).\nThat value is instantly locked as your bid for that card.\nMaximum potential of 20.'},
           ]},
           {name:'Nana (Cat)',col:[178,148,228],skills:[
             {n:'Swap',t:'3/stage',c:null,d:'Exchange 1 of your chosen dice with 1 of opponent\'s chosen dice.\nSteal their high die and give them a low one.'},
@@ -2817,6 +2878,7 @@ new p5(p => {
       p.drawingContext.shadowBlur = 18;
       p.drawingContext.fillText(L.gameTitle, CW/2, 170);
       p.drawingContext.shadowBlur = 0;
+      p.drawingContext.fillStyle = '#000'; // fillStyleリセット
       p.textFont('sans-serif');
       // 説明文の背景帯（半透明）
       const _sumLines = L.titleSummary.length;
@@ -3041,20 +3103,23 @@ new p5(p => {
   }
 
   // ── GAME scene: card drawing ──
+// ══════════════════════════════════════════════════════════════
+// SECTION 9b: CARD RENDERER
+// ══════════════════════════════════════════════════════════════
   function drawCard(i) {
     const r = cRect(i), c = G.market[i];
     const revealed = (G.phase === 'REVEAL' && G.revStep > i) || G.phase === 'TIEBREAK' || G.phase === 'TURN_END';
-    const tc = typeCol(c.type), pb = pBidFor(i);
+    const tc = typeCol(c.type), pb = c.pBidCache ?? pBidFor(i); // キャッシュ優先
     p.push();
     if (c.winner && c.winner !== 'tie' && revealed) { const gc = c.winner === 'p' ? [52, 192, 98] : [192, 52, 52]; p.noStroke(); p.fill(gc[0], gc[1], gc[2], 28); p.rect(r.x - 5, r.y - 5, r.w + 10, r.h + 10, 12); }
     // 茶々賭け宣言ハイライト（確定後：オレンジ枠＋バッジ）
     if (G.chachaBetIdx === i) {
-      p.noFill(); p.stroke(215,140,50); p.strokeWeight(3); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12);
+      p.noFill(); p.stroke(...COL.GOLD); p.strokeWeight(3); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12);
     }
     // スキル選択待ち中：全カードにグロー
     if (G.skillSelectMode && G.skillSelectMode.def && G.skillSelectMode.def.target==='card') {
       const pulse = (Math.sin(p.frameCount*0.15)*0.5+0.5);
-      p.noFill(); p.stroke(178,148,228); p.strokeWeight(1.5+pulse*2);
+      p.noFill(); p.stroke(...COL.SKILL); p.strokeWeight(1.5+pulse*2);
       p.rect(r.x-2,r.y-2,r.w+4,r.h+4,12);
     }
     // 福夜タイブレーク確定ハイライト（青枠）
@@ -3067,7 +3132,7 @@ new p5(p => {
     }
     // AI茶々賭け宣言マーカー（右上に★相手マーク）
     if (G.aiChachaBetIdx === i) {
-      p.noFill(); p.stroke(215,140,50); p.strokeWeight(2); p.drawingContext.setLineDash([4,3]); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12); p.drawingContext.setLineDash([]);
+      p.noFill(); p.stroke(...COL.GOLD); p.strokeWeight(2); p.drawingContext.setLineDash([4,3]); p.rect(r.x-3,r.y-3,r.w+6,r.h+6,12); p.drawingContext.setLineDash([]);
       p.fill(215,140,50,200); p.rect(r.x+r.w-44,r.y+6,40,18,5);
       p.fill(255); p.textSize(10); p.textAlign(p.CENTER,p.CENTER);
       p.text(lang==='ja'?'相手賭':'OppBet', r.x+r.w-24, r.y+15);
@@ -3086,29 +3151,29 @@ new p5(p => {
     p.stroke(60, 76, 110); p.strokeWeight(1.5); p.fill(17, 22, 38); p.rect(r.x, r.y, r.w, r.h, 10);
     p.noStroke(); p.fill(...tc); p.rect(r.x, r.y, r.w, 5, 10, 10, 0, 0);
     // オーナーインジケーター（左端バー + ラベル）
-    if (c.owner === 'p') { p.fill(52, 192, 108, 200); p.rect(r.x, r.y + 5, 5, r.h - 5, 0, 0, 0, 10); }
-    else if (c.owner === 'a') { p.fill(192, 68, 68, 200); p.rect(r.x, r.y + 5, 5, r.h - 5, 0, 0, 0, 10); }
-    p.fill(13, 18, 32); p.rect(r.x + 6, r.y + 10, r.w - 12, 68, 6);
-    drawIcon(r.x + r.w / 2, r.y + 44, c.type, 40);
+    if (c.owner === 'p') { p.fill(...COL.P_GREEN, 200); p.rect(r.x, r.y + 5, 5, r.h - 5, 0, 0, 0, 10); }
+    else if (c.owner === 'a') { p.fill(...COL.A_RED, 200); p.rect(r.x, r.y + 5, 5, r.h - 5, 0, 0, 0, 10); }
+    p.fill(13, 18, 32); p.rect(r.x + CARD_UI.INNER_X, r.y + 10, r.w - 12, 68, 6);
+    drawIcon(r.x + r.w / 2, r.y + CARD_UI.ICON_Y, c.type, 40);
     // 特別カードは専用名を表示、通常カードはcardNames
     const _cardLabel = (c.isSpecial && c.spName) ? c.spName : (L.cardNames[c.key] || c.key);
     p.fill(c.isSpecial ? [235,215,255] : [215,225,245]); p.textAlign(p.CENTER, p.TOP); p.textSize(c.isSpecial?15:17);
-    p.text(_cardLabel, r.x + r.w / 2, r.y + 84);
-    p.fill(...tc); p.textSize(12); p.text(c.type === 'income' ? L.cardEffect.income(c.val) : c.type === 'invest' ? L.cardEffect.invest() : L.cardEffect.instant(c.val), r.x + r.w / 2, r.y + 106);
+    p.text(_cardLabel, r.x + r.w / 2, r.y + CARD_UI.NAME_Y);
+    p.fill(...tc); p.textSize(12); p.text(c.type === 'income' ? L.cardEffect.income(c.val) : c.type === 'invest' ? L.cardEffect.invest() : L.cardEffect.instant(c.val), r.x + r.w / 2, r.y + CARD_UI.EFF_Y);
     // 変化効果バッジ（特別カード）+ targetVal表示
     const isTarget = !!(c.effect && c.isSpecial && c.effect==='targetNum' && c.targetVal!=null);
     if (c.effect && c.isSpecial) {
       const effName = (L.specialCardEffectNames&&L.specialCardEffectNames[c.effect]) || c.effect;
-      p.fill(178,148,228,220); p.rect(r.x+6, r.y+118, r.w-12, isTarget?28:16, 4);
+      p.fill(...COL.SKILL,220); p.rect(r.x+6, r.y+118, r.w-12, isTarget?28:16, 4);
       p.fill(235,220,255); p.textSize(9); p.textAlign(p.CENTER,p.TOP);
       p.text('◆ '+effName, r.x+r.w/2, r.y+120);
       if (isTarget) {
-        p.fill(215,178,50); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
+        p.fill(...COL.GOLD); p.textSize(11); p.textAlign(p.CENTER,p.TOP);
         p.text((lang==='ja'?'目標値: ':'Target: ')+c.targetVal, r.x+r.w/2, r.y+131);
       }
     }
-    const by = r.y + 152; // 固定位置（特別カードでも同じ） p.fill(22, 28, 48); p.rect(r.x + 6, by, r.w - 12, 76, 6);
-    p.fill(68, 190, 126); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + 12, by + 19);
+    const by = r.y + CARD_UI.BY_OFF; // 固定位置（特別カードでも同じ） p.fill(...COL.BG_CARD); p.rect(r.x + CARD_UI.INNER_X, by, r.w - CARD_UI.INNER_X*2, CARD_UI.BY_H, 6);
+    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
     // target比較の場合は合計値を表示（近い方が勝つと分かるように）
     if (c.effect === 'targetNum' && c.targetVal != null) {
       const assigned = G.pDice.filter(d=>d.card===i);
@@ -3118,12 +3183,12 @@ new p5(p => {
       p.fill(148,162,200); p.textSize(9); p.textAlign(p.RIGHT,p.CENTER);
       p.text((lang==='ja'?'差:':'dist:')+dist, r.x+r.w-10, by+34);
     } else {
-      p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - 10, by + 19);
+      p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.YOU_Y);
     }
-    p.fill(180, 86, 86); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + 12, by + 52);
+    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
     // partialInfo: ownerが'p'（自分のカード）の時のみ、相手のダイス数をプレイヤーに表示
     if (c.effect === 'partialInfo' && c.isSpecial && c.owner === 'p' && G.phase === 'ASSIGN') {
-      const aCount = G.aPool.filter(d=>d.card===i).length;
+      const aCount = c.aCountCache ?? G.aPool.filter(d=>d.card===i).length; // キャッシュ優先
       p.fill(14,22,48); p.rect(r.x+6, by+38, r.w-12, 28, 4);
       p.fill(108,172,248); p.textSize(11); p.textAlign(p.LEFT,p.CENTER);
       p.text(lang==='ja'?'🎯 相手割当:':'🎯 Opp Dice:', r.x+12, by+52);
@@ -3131,8 +3196,8 @@ new p5(p => {
       p.text(aCount+'個', r.x+r.w-10, by+52);
     } else {
       p.textSize(22); p.textAlign(p.RIGHT, p.CENTER);
-      if (revealed) { p.fill(180, 86, 86); p.text(c.aBid, r.x + r.w - 10, by + 52); }
-      else           { p.fill(68, 80, 110);  p.text('—', r.x + r.w - 10, by + 52); }
+      if (revealed) { p.fill(...COL.A_RED_MD); p.text(c.aBid, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
+      else           { p.fill(68, 80, 110);  p.text('—', r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
     }
     // スキルマーカー（by中央に小バッジ）
     // スキルマーカー：byパネル内「あなた」と「相手」の間（by+34付近）に横帯で表示
@@ -3176,7 +3241,7 @@ new p5(p => {
     }
     if (c.winner && revealed) {
       const wc = c.winner === 'p' ? [52, 190, 98] : c.winner === 'a' ? [190, 68, 68] : [192, 165, 52];
-      p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - 32, 92, 25, 12);
+      p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - CARD_UI.WINNER_Y, 92, 25, 12);
       p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(11);
       p.text(c.winner === 'p' ? L.wonLabel : c.winner === 'a' ? L.oppWon : L.tieLabel, r.x + r.w / 2, r.y + r.h - 20);
     }
@@ -3184,7 +3249,7 @@ new p5(p => {
       const s = cSlot(i, di);
       if (d.isD20) {
         // D20専用描画（20面ダイス風：菱形＋数値）
-        p.fill(215,178,50); p.stroke(255,210,80); p.strokeWeight(1.5);
+        p.fill(...COL.GOLD); p.stroke(255,210,80); p.strokeWeight(1.5);
         p.push(); p.translate(s.x+DSS/2, s.y+DSS/2);
         // 菱形
         p.beginShape(); p.vertex(0,-DSS*0.55); p.vertex(DSS*0.45,0); p.vertex(0,DSS*0.55); p.vertex(-DSS*0.45,0); p.endShape(p.CLOSE);
@@ -3209,21 +3274,21 @@ new p5(p => {
     p.stroke(120, 60, 180); p.strokeWeight(2); p.fill(22, 14, 38); p.rect(r.x, r.y, r.w, r.h, 10); p.noStroke();
     for (let i = 0; i < 6; i++) { const t = i / 5; p.fill(Math.round(p.lerp(168, 120, t)), Math.round(p.lerp(80, 50, t)), Math.round(p.lerp(220, 180, t))); p.rect(r.x, r.y + i, r.w, 1); }
     p.rect(r.x, r.y, r.w, 5, 10, 10, 0, 0);
-    p.fill(15, 8, 26); p.rect(r.x + 6, r.y + 10, r.w - 12, 68, 6);
-    drawIcon(r.x + r.w / 2, r.y + 44, 'special', 40);
+    p.fill(15, 8, 26); p.rect(r.x + CARD_UI.INNER_X, r.y + 10, r.w - 12, 68, 6);
+    drawIcon(r.x + r.w / 2, r.y + CARD_UI.ICON_Y, 'special', 40);
     p.fill(200, 148, 255); p.textAlign(p.CENTER, p.TOP); p.textSize(11); p.text('— ' + L.specialLabel + ' —', r.x + r.w / 2, r.y + 82);
     p.fill(228, 198, 255); p.textSize(15); p.text(L.specialNames[sc.effectType] || sc.effectType, r.x + r.w / 2, r.y + 98);
     p.fill(175, 142, 215); p.textSize(10); p.text(L.specialDescs[sc.effectType] || '', r.x + 8, r.y + 118, r.w - 16, 62);
-    const by = r.y + 188; p.fill(18, 10, 35); p.rect(r.x + 6, by, r.w - 12, 76, 6);
-    p.fill(68, 190, 126); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + 12, by + 19);
-    p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - 10, by + 19);
-    p.fill(180, 86, 86); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + 12, by + 52);
+    const by = r.y + 188; p.fill(18, 10, 35); p.rect(r.x + CARD_UI.INNER_X, by, r.w - CARD_UI.INNER_X*2, CARD_UI.BY_H, 6);
+    p.fill(...COL.P_GREEN_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.you, r.x + CARD_UI.LABEL_X, by + CARD_UI.YOU_Y);
+    p.textSize(22); p.textAlign(p.RIGHT, p.CENTER); p.text(pb, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.YOU_Y);
+    p.fill(...COL.A_RED_MD); p.textAlign(p.LEFT, p.CENTER); p.textSize(11); p.text(L.opp, r.x + CARD_UI.LABEL_X, by + CARD_UI.OPP_Y);
     p.textSize(22); p.textAlign(p.RIGHT, p.CENTER);
-    if (revealed) { p.fill(180, 86, 86); p.text(sc.aBid, r.x + r.w - 10, by + 52); }
-    else           { p.fill(68, 80, 110);  p.text('—', r.x + r.w - 10, by + 52); }
+    if (revealed) { p.fill(...COL.A_RED_MD); p.text(sc.aBid, r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
+    else           { p.fill(68, 80, 110);  p.text('—', r.x + r.w - CARD_UI.INNER_R, by + CARD_UI.OPP_Y); }
     if (sc.winner && revealed) {
       const wc = sc.winner === 'p' ? [52, 190, 98] : sc.winner === 'a' ? [190, 68, 68] : [192, 165, 52];
-      p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - 32, 92, 25, 12);
+      p.noStroke(); p.fill(...wc); p.rect(r.x + r.w / 2 - 46, r.y + r.h - CARD_UI.WINNER_Y, 92, 25, 12);
       p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(11);
       p.text(sc.winner === 'p' ? L.wonLabel : sc.winner === 'a' ? L.oppWon : L.tieLabel, r.x + r.w / 2, r.y + r.h - 20);
     }
@@ -3474,6 +3539,24 @@ new p5(p => {
         p.text(nm1, ix+iW/2, iY+(nm2?iH/2-8:iH/2));
         if(nm2) p.text(nm2, ix+iW/2, iY+iH/2+8);
       });
+    }
+    // ── スキル選択中：相手ダイスのグロー（die_both Step2）──
+    if (G.skillSelectMode && G.skillSelectMode.def && G.skillSelectMode.def.target === 'die_both' && G.skillSelectMode.step === 2) {
+      const pulse = (Math.sin(p.frameCount * 0.18) * 0.5 + 0.5);
+      const adl = aDiceLayout(G.aPool.length, G.aKeepVis);
+      adl.positions.forEach(pos => {
+        p.noFill(); p.stroke(178, 148, 228); p.strokeWeight(1.5 + pulse * 2);
+        p.rect(pos.x - 2, AZ.y + 14, DSS + 4, DSS + 4, 6);
+      });
+      p.noStroke(); p.fill(178, 148, 228, 40 + pulse * 40);
+      const adl2 = aDiceLayout(G.aPool.length, G.aKeepVis);
+      const firstX = adl2.positions[0]?.x ?? 0;
+      const lastX  = (adl2.positions[adl2.positions.length-1]?.x ?? 0) + DSS;
+      p.rect(firstX - 6, AZ.y + 10, lastX - firstX + 12, DSS + 12, 8);
+      p.noStroke();
+      // 案内テキスト
+      p.fill(200, 168, 248); p.textSize(12); p.textAlign(p.CENTER, p.CENTER);
+      p.text(lang==='ja'?'▶ 相手のダイスを選択':'▶ Select opponent die', CW/2, AZ.y - 10);
     }
     // AIアイテムスロット（EXカード上・横並び）
     if (RUN && RUN.aiItems && RUN.aiItems.length > 0) {
@@ -3966,6 +4049,9 @@ new p5(p => {
   }
 
 
+// ══════════════════════════════════════════════════════════════
+// SECTION 10b: HUD RENDERER
+// ══════════════════════════════════════════════════════════════
   // ── v0.40: スキルツールチップ ──
   function drawSkillTooltip() {
     const npcIdx = RUN ? RUN.playerNPC : 0;
@@ -4963,14 +5049,18 @@ new p5(p => {
 
       // die_any: 自分のダイスを1個選ぶ
       if (def.target === 'die_any') {
-        const lay = pDiceLayout(G.pDice.filter(d=>d.fresh), G.pDice.filter(d=>!d.fresh&&d.card===null));
-        lay.positions.forEach((pos, pi) => {
-          const d = pi < lay.kC ? G.pDice.filter(d=>!d.fresh&&d.card===null)[pi] : G.pDice.filter(d=>d.fresh)[pi-lay.kC];
+        // 未割当ダイスのみ対象（割り当て済みは除外）
+        const _allUnass = G.pDice.filter(d => d.card === null);
+        const _kD = _allUnass.filter(d=>!d.fresh), _fD = _allUnass.filter(d=>d.fresh);
+        const lay = pDiceLayout(_fD, _kD);
+        for (let _pi = 0; _pi < lay.positions.length; _pi++) {
+          const pos = lay.positions[_pi];
+          const d = _pi < lay.kC ? _kD[_pi] : _fD[_pi - lay.kC];
           const idx = d ? G.pDice.indexOf(d) : -1;
           if (idx >= 0 && hov(pos.x, pos.y, DS, DS)) {
             executeSkill(key, { dieIdx: idx, origVal: d.val }); return;
           }
-        });
+        }
       }
 
       // die_both: 自→相手の2段階選択
