@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ダイスオークション | Dice Auction v0.40d</title>
+<title>ダイスオークション | Dice Auction v0.50</title>
 
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-EZQPZTQ7P4"></script>
@@ -34,7 +34,8 @@
 <meta name="twitter:title"       content="ダイスオークション | Dice Auction">
 <meta name="twitter:description" content="ダイスを割り当てて競り勝つ！ NPCと組んで複数ステージを戦い抜くターン制入札ゲーム。">
 <meta name="twitter:image"       content="https://amagaki.github.io/dicegame/assets/ogp.png">
-<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&family=Orbitron:wght@700;900&family=Rajdhani:wght@600&family=Fredoka+One&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231a1a2e'/><rect x='3' y='3' width='26' height='26' rx='5' fill='none' stroke='%2334c468' stroke-width='2'/><circle cx='10' cy='10' r='2.5' fill='%2334c468'/><circle cx='22' cy='10' r='2.5' fill='%2334c468'/><circle cx='16' cy='16' r='2.5' fill='%2334c468'/><circle cx='10' cy='22' r='2.5' fill='%2334c468'/><circle cx='22' cy='22' r='2.5' fill='%2334c468'/></svg>">
 <style>
   /* スマホ対応: dvh/dvwでビューポートをフル活用 */
   html, body {
@@ -126,7 +127,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.50c',
+      gameTitle: 'ダイスオークション', version: 'v0.50e',
 
       // ── Title screen ──
       titleSummary: [
@@ -391,7 +392,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.50c',
+      gameTitle: 'Dice Auction', version: 'v0.50e',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -2786,11 +2787,22 @@ new p5(p => {
         p.fill(active ? [215, 178, 48] : [88, 96, 128]); p.textAlign(p.LEFT, p.CENTER); p.text(lv.label, 18, 22 + i * 28);
         if (active) { p.noStroke(); p.fill(215, 178, 48); p.rect(16, 32 + i * 28, lang === 'ja' ? 66 : 64, 2); }
       });
-      p.fill(52, 192, 108); p.textAlign(p.CENTER, p.CENTER); p.textSize(64); p.text(L.gameTitle, CW / 2, 160);
+      // タイトルグラデーション（ゴールド → クリーム → 薄いゴールド）
+      p.textFont('Fredoka One, sans-serif'); p.textAlign(p.CENTER, p.CENTER); p.textSize(72);
+      const _tg = p.drawingContext.createLinearGradient(CW/2-300, 120, CW/2+300, 200);
+      _tg.addColorStop(0.0, '#f5c842');
+      _tg.addColorStop(0.4, '#fff8e1');
+      _tg.addColorStop(0.7, '#f0b429');
+      _tg.addColorStop(1.0, '#e8a020');
+      p.drawingContext.fillStyle = _tg;
+      p.drawingContext.shadowColor = 'rgba(240, 160, 30, 0.6)';
+      p.drawingContext.shadowBlur = 18;
+      p.drawingContext.fillText(L.gameTitle, CW/2, 170);
+      p.drawingContext.shadowBlur = 0;
+      p.textFont('sans-serif');
       p.textFont('sans-serif'); p.fill(165, 175, 210); p.textSize(16);
       L.titleSummary.forEach((line, i) => p.text(line, CW / 2, 455 + i * 28));
-      p.textFont('Mochiy Pop One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(22); p.text(L.startBtn, CW / 2, CH - 86);
-      p.textFont('sans-serif'); p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
+      p.textFont('Fredoka One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(24); p.text(L.startBtn, CW / 2, CH - 86); p.textFont('sans-serif'); p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
     } else {
       [{ k: 'ja', x: 16, w: 66 }, { k: 'en', x: 16, w: 64 }].forEach((lv, i) => { if (lang === lv.k) { p.noStroke(); p.fill(215, 178, 48); p.rect(lv.x, 32 + i * 28, lv.w, 2); } });
       EGG.drawWords(); EGG.drawParticles(); EGG.drawDice(); EGG.drawThankYou();
