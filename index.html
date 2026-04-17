@@ -170,7 +170,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.57',
+      gameTitle: 'ダイスオークション', version: 'v0.57a',
 
       // ── Title screen ──
       titleSummary: [
@@ -435,7 +435,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.57',
+      gameTitle: 'Dice Auction', version: 'v0.57a',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -4800,6 +4800,11 @@ new p5(p => {
           const _btnY = Math.max(8, CH/2 - _th/2) + _th - 66;
           if (hov(CW/2-100, _btnY, 200, 48)) {
             tutorialSeen[_tutPhase] = true;
+            // 全フェーズ完了でtutorial_completeイベント
+            const _allDone = ['config','npc','draft','card_select','assign'].every(k => tutorialSeen[k]);
+            if (_allDone) {
+              gaEvent('tutorial_complete', { npc: RUN&&NPC_CHARS[RUN.playerNPC]?.key||'', lang: lang });
+            }
             return;
           }
         }
