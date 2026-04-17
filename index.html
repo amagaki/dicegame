@@ -35,7 +35,7 @@
 <meta name="twitter:description" content="ダイスを割り当てて競り勝つ！ NPCと組んで複数ステージを戦い抜くターン制入札ゲーム。">
 <meta name="twitter:image"       content="https://amagaki.github.io/dicegame/assets/ogp.png">
 <link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&family=Orbitron:wght@700;900&family=Rajdhani:wght@600&family=Fredoka+One&display=swap" rel="stylesheet">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231a1a2e'/><rect x='3' y='3' width='26' height='26' rx='5' fill='none' stroke='%2334c468' stroke-width='2'/><circle cx='10' cy='10' r='2.5' fill='%2334c468'/><circle cx='22' cy='10' r='2.5' fill='%2334c468'/><circle cx='16' cy='16' r='2.5' fill='%2334c468'/><circle cx='10' cy='22' r='2.5' fill='%2334c468'/><circle cx='22' cy='22' r='2.5' fill='%2334c468'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a1628'/><rect x='2' y='2' width='28' height='28' rx='6' fill='%23e8a020'/><rect x='3' y='3' width='26' height='26' rx='5' fill='%23f5c842'/><rect x='4' y='4' width='24' height='24' rx='4' fill='%23e8a020'/><circle cx='10' cy='10' r='2.8' fill='%23fff8e1'/><circle cx='22' cy='10' r='2.8' fill='%23fff8e1'/><circle cx='16' cy='16' r='2.8' fill='%23fff8e1'/><circle cx='10' cy='22' r='2.8' fill='%23fff8e1'/><circle cx='22' cy='22' r='2.8' fill='%23fff8e1'/></svg>">
 <style>
   /* スマホ対応: dvh/dvwでビューポートをフル活用 */
   html, body {
@@ -127,7 +127,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.50e',
+      gameTitle: 'ダイスオークション', version: 'v0.50g',
 
       // ── Title screen ──
       titleSummary: [
@@ -392,7 +392,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.50e',
+      gameTitle: 'Dice Auction', version: 'v0.50g',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -2779,7 +2779,25 @@ new p5(p => {
     EGG.update();
     drawSceneBg('bg_title', 0.0);
     const hS = hov(CW / 2 - 150, CH - 112, 300, 56);
-    p.fill(hS ? [55, 152, 85] : [36, 112, 60]); p.rect(CW / 2 - 150, CH - 112, 300, 56, 10);
+    // ボタン外枠（ゴールド）
+    const _bx = CW/2-150, _by = CH-112, _bw = 300, _bh = 56;
+    p.noFill(); p.stroke(200,158,50); p.strokeWeight(2);
+    p.rect(_bx-2, _by-2, _bw+4, _bh+4, 7);
+    p.stroke(240,200,90,160); p.strokeWeight(1);
+    p.rect(_bx-4, _by-4, _bw+8, _bh+8, 9);
+    p.noStroke();
+    // ボタン本体（グラデーション風：暗い緑 → やや明るい緑）
+    p.drawingContext.fillStyle = hS
+      ? p.drawingContext.createLinearGradient(_bx,_by,_bx,_by+_bh)
+      : p.drawingContext.createLinearGradient(_bx,_by,_bx,_by+_bh);
+    const _bg = hS
+      ? (() => { const g=p.drawingContext.createLinearGradient(_bx,_by,_bx,_by+_bh); g.addColorStop(0,'#3a9e5a'); g.addColorStop(1,'#236438'); return g; })()
+      : (() => { const g=p.drawingContext.createLinearGradient(_bx,_by,_bx,_by+_bh); g.addColorStop(0,'#2a7a44'); g.addColorStop(1,'#174d2c'); return g; })();
+    p.drawingContext.fillStyle = _bg;
+    p.drawingContext.beginPath();
+    p.drawingContext.roundRect(_bx, _by, _bw, _bh, 6);
+    p.drawingContext.fill();
+    p.drawingContext.fillStyle = '#000';
     if (!EGG.words.length) {
       p.textFont('Mochiy Pop One, sans-serif'); p.textSize(14);
       [{ k: 'ja', label: '日本語' }, { k: 'en', label: 'English' }].forEach((lv, i) => {
@@ -2800,7 +2818,17 @@ new p5(p => {
       p.drawingContext.fillText(L.gameTitle, CW/2, 170);
       p.drawingContext.shadowBlur = 0;
       p.textFont('sans-serif');
-      p.textFont('sans-serif'); p.fill(165, 175, 210); p.textSize(16);
+      // 説明文の背景帯（半透明）
+      const _sumLines = L.titleSummary.length;
+      const _sumY = 435;
+      p.noStroke(); p.fill(10, 8, 20, 170);
+      p.rect(CW/2-420, _sumY-16, 840, _sumLines*28+24, 8);
+      // 帯の上下に薄いゴールドライン
+      p.stroke(180,140,40,80); p.strokeWeight(1);
+      p.line(CW/2-380, _sumY-16, CW/2+380, _sumY-16);
+      p.line(CW/2-380, _sumY+_sumLines*28+8, CW/2+380, _sumY+_sumLines*28+8);
+      p.noStroke();
+      p.fill(195, 210, 240); p.textFont('sans-serif'); p.textSize(16);
       L.titleSummary.forEach((line, i) => p.text(line, CW / 2, 455 + i * 28));
       p.textFont('Fredoka One, sans-serif'); p.fill(205, 248, 218); p.textAlign(p.CENTER, p.CENTER); p.textSize(24); p.text(L.startBtn, CW / 2, CH - 86); p.textFont('sans-serif'); p.fill(58, 72, 105); p.textSize(11); p.textAlign(p.RIGHT, p.BOTTOM); p.text(L.version, CW - 12, CH - 8);
     } else {
