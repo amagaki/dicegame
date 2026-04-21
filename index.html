@@ -170,7 +170,7 @@ new p5(p => {
   const LANG = {
     ja: {
       // ── Meta ──
-      gameTitle: 'ダイスオークション', version: 'v0.57a',
+      gameTitle: 'ダイスオークション', version: 'v0.57privacy',
 
       // ── Title screen ──
       titleSummary: [
@@ -435,7 +435,7 @@ new p5(p => {
       },
     },
     en: {
-      gameTitle: 'Dice Auction', version: 'v0.57a',
+      gameTitle: 'Dice Auction', version: 'v0.57privacy',
       titleSummary: [
         'Secretly assign dice to cards — higher total wins the card',
         'Keep dice for next turn, but opponent sees how many you kept',
@@ -773,6 +773,7 @@ new p5(p => {
 
   // ── Help overlay state ──
   let helpOpen = false, helpTab = 0, helpScrollY = 0;
+  let showPrivacy = false; // プライバシーポリシーモーダル表示フラグ
   // tutorialShown/tutorialPhase は廃止 → tutorialSeen に統合
 
   // ── NPC select state ──
@@ -2937,7 +2938,69 @@ new p5(p => {
     p.textFont('sans-serif');
   }
 
-  // ── TITLE scene ──
+  function drawPrivacyModal() {
+    if (!showPrivacy) return;
+    // 暗幕
+    p.fill(0, 0, 0, 200); p.noStroke(); p.rect(0, 0, CW, CH);
+    // モーダル本体
+    const mw = 620, mh = 380, mx = CW/2 - mw/2, my = CH/2 - mh/2;
+    p.fill(10, 14, 30); p.stroke(68, 88, 148); p.strokeWeight(1.5);
+    p.rect(mx, my, mw, mh, 12); p.noStroke();
+    // タイトルバー
+    p.fill(22, 30, 58); p.rect(mx, my, mw, 40, 12, 12, 0, 0);
+    p.fill(175, 188, 228); p.textFont('Mochiy Pop One, sans-serif');
+    p.textSize(16); p.textAlign(p.LEFT, p.CENTER);
+    p.text(lang==='ja' ? '🔒 プライバシーポリシー' : '🔒 Privacy Policy', mx+16, my+20);
+    p.textFont('sans-serif');
+    // 本文
+    const tx = mx+20, tw = mw-40;
+    let ty = my + 56;
+    const lineH = 20;
+    p.fill(175, 188, 225); p.textSize(14); p.textAlign(p.LEFT, p.TOP);
+    if (lang === 'ja') {
+      const lines = [
+        'このゲーム（ダイスオークション）では、Google LLC が提供する',
+        'Google アナリティクスを利用しています。',
+        '',
+        'Cookie を通じて訪問日時・ページビュー等の行動データを収集・',
+        '分析します。個人を特定する情報は収集されません',
+        '（IP アドレスは匿名化されます）。',
+        '収集データはゲーム改善のみに使用されます。',
+        '',
+        'Cookie を無効にすることでデータ収集を拒否できます。',
+      ];
+      lines.forEach((line, i) => { p.text(line, tx, ty + i * lineH); });
+      ty += lines.length * lineH + 10;
+      p.fill(108, 148, 228); p.textSize(13);
+      p.text('Googleプライバシーポリシー: https://policies.google.com/privacy', tx, ty);
+    } else {
+      const lines = [
+        'This game (Dice Auction) uses Google Analytics by Google LLC.',
+        '',
+        'It collects behavioral data via cookies (visit time, page views,',
+        'time on site, referral source).',
+        'No personally identifiable information is collected.',
+        'IP addresses are anonymized.',
+        'Data is used solely to improve this game.',
+        '',
+        'You can opt out by disabling cookies in your browser.',
+      ];
+      lines.forEach((line, i) => { p.text(line, tx, ty + i * lineH); });
+      ty += lines.length * lineH + 10;
+      p.fill(108, 148, 228); p.textSize(13);
+      p.text('Google Privacy Policy: https://policies.google.com/privacy', tx, ty);
+    }
+    // 閉じるボタン
+    const bw=160, bh=38, bx=CW/2-bw/2, by2=my+mh-54;
+    const hClose = hov(bx, by2, bw, bh);
+    p.fill(hClose ? [38, 72, 128] : [24, 48, 92]); p.stroke(68, 108, 188); p.strokeWeight(1);
+    p.rect(bx, by2, bw, bh, 8); p.noStroke();
+    p.fill(195, 215, 255); p.textFont('Mochiy Pop One, sans-serif'); p.textSize(14);
+    p.textAlign(p.CENTER, p.CENTER); p.text(lang==='ja' ? '閉じる' : 'Close', CW/2, by2+bh/2);
+    p.textFont('sans-serif');
+  }
+
+    // ── TITLE scene ──
   function drawTitle() {
     EGG.update();
     drawSceneBg('bg_title', 0.0);
@@ -3008,6 +3071,15 @@ new p5(p => {
       p.noStroke();
       EGG.drawWords(); EGG.drawParticles(); EGG.drawDice(); EGG.drawThankYou();
     }
+    // Privacy Policy リンク（EGG非アクティブ時のみ手動描画）
+    if (!EGG.words.length) {
+      const _ppHov3 = hov(CW-148, CH-24, 140, 18);
+      p.noStroke(); p.fill(_ppHov3 ? [160, 170, 220] : [80, 88, 118]);
+      p.textSize(12); p.textAlign(p.RIGHT, p.BOTTOM);
+      p.text(lang==='ja' ? 'プライバシーポリシー' : 'Privacy Policy', CW-12, CH-20);
+      if (_ppHov3) { p.stroke(120,130,180,140); p.strokeWeight(0.5); p.line(CW-148, CH-19, CW-12, CH-19); p.noStroke(); }
+    }
+    drawPrivacyModal();
   }
 
   // ── CONFIG scene ──
@@ -4783,6 +4855,13 @@ new p5(p => {
   };
 
   p.mouseReleased = function () {
+    // ── プライバシーポリシーモーダル ──
+    if (showPrivacy) {
+      const mw=620, mh=380, mx=CW/2-mw/2, my=CH/2-mh/2;
+      const bw=160, bh=38, bx=CW/2-bw/2, by2=my+mh-54;
+      if (hov(bx, by2, bw, bh) || !hov(mx, my, mw, mh)) { showPrivacy=false; return; }
+      return;
+    }
     // ── チュートリアル「確認」ボタン判定（全シーン共通） ──
     {
       const _tutPhase =
@@ -4839,6 +4918,15 @@ new p5(p => {
       if (EGG.onRelease(p.mouseX, p.mouseY)) return; if (EGG.heldIdx >= 0) return;
       if (hov(14, 8, 80, 26)) { setLang('ja'); return; }
       if (hov(14, 36, 80, 26)) { setLang('en'); return; }
+      // Privacy Policy リンク
+      if (!EGG.words.length) {
+        // EGG非アクティブ：hov判定
+        if (hov(CW-148, CH-24, 140, 18)) { showPrivacy=true; return; }
+      } else {
+        // EGGアクティブ：aliveなワードのhitR判定
+        const ppWord = EGG.words.find(w => w.txt === (lang==='ja'?'プライバシーポリシー':'Privacy Policy') && w.alive);
+        if (ppWord && Math.sqrt((p.mouseX-ppWord.cx)**2+(p.mouseY-ppWord.cy)**2) < ppWord.hitR) { showPrivacy=true; return; }
+      }
       if (hov(CW / 2 - 150, CH - 112, 300, 56)) { scene = 'CONFIG'; return; }
       return;
     }
@@ -5328,6 +5416,7 @@ new p5(p => {
       addW(L.startBtn, CW / 2, CH - 86, 'center', 'center', 24, [205, 248, 218], 'fredoka');
       addW(L.version, CW - 12, CH - 8, 'right', 'bottom', 11, [58, 72, 105], 'sans');
       addW(L.eggPull, CW / 2, CH - 18, 'center', 'center', 14, [165, 130, 50], 'sans');
+      addW(lang==='ja'?'プライバシーポリシー':'Privacy Policy', CW - 12, CH - 20, 'right', 'bottom', 12, [88, 96, 128], 'sans');
     },
     isOnTitle(mx, my) { const hw = this.titleHitW / 2; return mx > CW / 2 - hw && mx < CW / 2 + hw && my > 120 && my < 200; },
     spawnDieAt(idx) { const pos = this.SPAWN[idx]; this.dice[idx] = { x: pos.x, y: pos.y, vx: 0, vy: 0, val: rng(1, 6), angle: 0, angVel: 0, state: 'waiting', respawnTimer: 0, anchor: { x: pos.x, y: pos.y }, idx }; },
